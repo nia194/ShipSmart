@@ -1,0 +1,26 @@
+/* TODO: [MIGRATION] Replace this file with the full index.css from the Lovable project.
+   The Lovable index.css defines all CSS variables for the shadcn/ui theme
+   (--background, --foreground, --primary, --card, --radius, etc.)
+   and dark mode variants.
+   Also import src/styles/shipsmart.css from the Lovable project.
+*/
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
