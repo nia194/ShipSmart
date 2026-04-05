@@ -1,0 +1,5 @@
+packages:
+  - "apps/web"
+  - "packages/shared"
+  # api-java and api-python are not pnpm packages; they are Nx projects only
+  # managed via their own build tools (Gradle / uv)
