@@ -1,0 +1,13 @@
+# ShipSmart — Supabase project config
+# Copied from Lovable project (project_id: fihrsfvohaxhmqrcisyl).
+# The database and auth remain in Supabase; this file is used by the Supabase CLI
+# for local development and migration management.
+
+project_id = "fihrsfvohaxhmqrcisyl"
+
+# TODO: [MIGRATION] Copy the full config.toml from the Lovable project.
+# The Lovable config.toml contains additional settings for:
+#   - local dev ports (api, db, studio)
+#   - edge function settings
+#   - auth config
+# Only the project_id is confirmed here.

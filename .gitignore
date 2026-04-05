@@ -1,0 +1,52 @@
+# ─── OS / Editor ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+
+# ─── Environment files ────────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ─── Node / pnpm ──────────────────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+dist/
+build/
+
+# ─── Nx cache ─────────────────────────────────────────────────────────────────
+.nx/cache
+.nx/workspace-data
+
+# ─── Java / Gradle ────────────────────────────────────────────────────────────
+apps/api-java/.gradle/
+apps/api-java/build/
+apps/api-java/out/
+*.class
+*.jar
+*.war
+*.ear
+HELP.md
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+apps/api-python/.venv/
+apps/api-python/__pycache__/
+apps/api-python/**/__pycache__/
+apps/api-python/**/*.pyc
+apps/api-python/.uv/
+*.egg-info/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Frontend ─────────────────────────────────────────────────────────────────
+apps/web/dist/
+apps/web/.vite/
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/

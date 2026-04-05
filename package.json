@@ -1,0 +1,29 @@
+{
+  "name": "shipsmart",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "nx run-many --target=serve --projects=web,api-java,api-python --parallel",
+    "dev:web": "nx serve web",
+    "dev:java": "nx serve api-java",
+    "dev:python": "nx serve api-python",
+    "build": "nx run-many --target=build --all",
+    "build:web": "nx build web",
+    "lint": "nx run-many --target=lint --all",
+    "test": "nx run-many --target=test --all",
+    "graph": "nx graph",
+    "affected:build": "nx affected --target=build"
+  },
+  "devDependencies": {
+    "nx": "22.3.0",
+    "@nx/vite": "22.3.0",
+    "@nx/eslint": "22.3.0",
+    "@nx/js": "22.3.0",
+    "typescript": "~5.9.0"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

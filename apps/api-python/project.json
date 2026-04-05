@@ -1,0 +1,37 @@
+{
+  "name": "api-python",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "apps/api-python/app",
+  "tags": ["type:app", "scope:python", "scope:backend"],
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+        "cwd": "apps/api-python"
+      }
+    },
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv sync --frozen",
+        "cwd": "apps/api-python"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run pytest",
+        "cwd": "apps/api-python"
+      }
+    },
+    "lint": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "uv run ruff check app/",
+        "cwd": "apps/api-python"
+      }
+    }
+  }
+}
