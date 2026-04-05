@@ -26,6 +26,7 @@ ShipSmart/
 │   ├── service-boundaries.md  Who owns what
 │   ├── migration-from-lovable.md  Migration guide
 │   ├── deployment-render.md  Render deployment guide
+│   ├── migration-checklist.md Ordered migration steps
 │   └── adr/                  Architecture Decision Records
 ├── nx.json                   Nx workspace config
 ├── package.json              Root pnpm workspace
@@ -61,7 +62,7 @@ See `docs/architecture.md` and `docs/service-boundaries.md` for full details.
 
 | Tool     | Version      | Install                                           |
 |----------|--------------|---------------------------------------------------|
-| Node.js  | 22+          | [nodejs.org](https://nodejs.org)                  |
+| Node.js  | 20+          | [nodejs.org](https://nodejs.org)                  |
 | pnpm     | 9+           | `npm install -g pnpm`                             |
 | Java     | 25           | SDKMAN: `sdk install java 25-open`                |
 | Python   | 3.13         | `pyenv install 3.13` or system installer          |

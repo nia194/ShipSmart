@@ -7,10 +7,10 @@
     "dev:web": "nx serve web",
     "dev:java": "nx serve api-java",
     "dev:python": "nx serve api-python",
-    "build": "nx run-many --target=build --all",
+    "build": "nx run-many --target=build",
     "build:web": "nx build web",
-    "lint": "nx run-many --target=lint --all",
-    "test": "nx run-many --target=test --all",
+    "lint": "nx run-many --target=lint",
+    "test": "nx run-many --target=test",
     "graph": "nx graph",
     "affected:build": "nx affected --target=build"
   },
@@ -22,7 +22,7 @@
     "typescript": "~5.9.0"
   },
   "engines": {
-    "node": ">=22.0.0",
+    "node": ">=20.0.0",
     "pnpm": ">=9.0.0"
   },
   "packageManager": "pnpm@9.15.0"
