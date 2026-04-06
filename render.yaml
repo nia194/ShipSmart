@@ -1,32 +1,42 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# ShipSmart — Render Deployment Configuration
+# ShipSmart — Render Blueprint Configuration
 # Docs: https://render.com/docs/blueprint-spec
 #
-# Services defined here:
-#   1. web          → React frontend (Static Site)
+# Services:
+#   1. web          → React frontend (Static Site on CDN)
 #   2. api-java     → Spring Boot backend (Web Service)
 #   3. api-python   → FastAPI backend (Web Service)
 #
-# RECOMMENDATION: Deploy the React frontend as a Render Static Site.
-# Reason: The app is a Vite SPA with no server-side rendering requirement.
-# Static Sites are free on Render, deploy from a CDN, and have no cold starts.
-# If SSR or server-side auth handling is ever needed, switch to a Web Service.
+# WHY Static Site for React:
+#   The React app is a Vite SPA with no server-side rendering. Render Static
+#   Sites are free, deploy from CDN (faster globally), and have zero cold starts.
+#   Switch to a Web Service only if you need SSR or server-side auth cookies.
 #
-# Replace [PLACEHOLDER] values before committing this file.
+# HOW services communicate:
+#   - Frontend calls both backends directly via public Render URLs.
+#   - Java and Python call each other via INTERNAL_*_API_URL env vars.
+#   - On Render paid plans, consider using private service URLs for backend-
+#     to-backend calls (e.g., https://api-java:10000 within the Render network).
+#
+# BEFORE DEPLOYING: Replace all [PLACEHOLDER] values in this file.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
   # ── React Frontend (Static Site) ──────────────────────────────────────────
+  # Deployed as a Static Site. Vite builds into apps/web/dist.
+  # The SPA rewrite rule ensures client-side routing works.
   - type: web
     name: [RENDER_SERVICE_NAME_WEB]
-    runtime: static
+    env: static
+    # rootDir controls what triggers auto-deploys and is the build working dir.
+    # Since pnpm workspace resolution needs the monorepo root, the build command
+    # navigates up before installing deps, then returns to build the web app.
     rootDir: apps/web
-    buildCommand: pnpm install && pnpm build
+    buildCommand: cd ../.. && pnpm install --frozen-lockfile && cd apps/web && pnpm build
     staticPublishPath: dist
     pullRequestPreviewsEnabled: true
     routes:
-      # SPA fallback — all routes serve index.html
       - type: rewrite
         source: /*
         destination: /index.html
@@ -43,17 +53,18 @@ services:
         value: production
 
   # ── Spring Boot Java API (Web Service) ───────────────────────────────────
+  # Java backend owns transactional business logic (shipments, quotes, auth).
+  # Render injects $PORT automatically — application.yml reads it.
   - type: web
     name: [RENDER_SERVICE_NAME_JAVA]
-    runtime: java
+    env: java
     rootDir: apps/api-java
     buildCommand: ./gradlew build -x test
-    startCommand: java -jar build/libs/shipsmart-api-java-*.jar
+    startCommand: java -jar build/libs/shipsmart-api-java-0.1.0-SNAPSHOT.jar
     plan: starter
     healthCheckPath: /api/v1/health
     envVars:
-      - key: SERVER_PORT
-        value: 10000
+      # Render injects PORT automatically. Spring Boot reads it via application.yml.
       - key: SPRING_PROFILES_ACTIVE
         value: production
       - key: DATABASE_URL
@@ -64,21 +75,25 @@ services:
         sync: false
       - key: SUPABASE_URL
         sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
       - key: CORS_ALLOWED_ORIGINS
         value: https://[RENDER_SERVICE_NAME_WEB].onrender.com
-      - key: PYTHON_API_BASE_URL
+      - key: INTERNAL_PYTHON_API_URL
         value: https://[RENDER_SERVICE_NAME_PYTHON].onrender.com
 
   # ── FastAPI Python API (Web Service) ─────────────────────────────────────
+  # Python backend handles AI/orchestration workflows, not core transactional data.
+  # Render injects $PORT automatically — uvicorn reads it from the start command.
   - type: web
     name: [RENDER_SERVICE_NAME_PYTHON]
-    runtime: python
+    env: python
     rootDir: apps/api-python
-    buildCommand: pip install uv && uv sync --frozen
+    buildCommand: pip install uv && uv sync
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     plan: starter
     healthCheckPath: /health
@@ -87,11 +102,11 @@ services:
         value: production
       - key: SUPABASE_URL
         sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
       - key: SUPABASE_ANON_KEY
         sync: false
-      - key: JAVA_API_BASE_URL
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: INTERNAL_JAVA_API_URL
         value: https://[RENDER_SERVICE_NAME_JAVA].onrender.com
       - key: CORS_ALLOWED_ORIGINS
         value: https://[RENDER_SERVICE_NAME_WEB].onrender.com

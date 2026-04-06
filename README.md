@@ -26,6 +26,7 @@ ShipSmart/
 │   ├── service-boundaries.md  Who owns what
 │   ├── migration-from-lovable.md  Migration guide
 │   ├── deployment-render.md  Render deployment guide
+│   ├── migration-checklist.md Ordered migration steps
 │   └── adr/                  Architecture Decision Records
 ├── nx.json                   Nx workspace config
 ├── package.json              Root pnpm workspace
@@ -61,7 +62,7 @@ See `docs/architecture.md` and `docs/service-boundaries.md` for full details.
 
 | Tool     | Version      | Install                                           |
 |----------|--------------|---------------------------------------------------|
-| Node.js  | 22+          | [nodejs.org](https://nodejs.org)                  |
+| Node.js  | 20+          | [nodejs.org](https://nodejs.org)                  |
 | pnpm     | 9+           | `npm install -g pnpm`                             |
 | Java     | 25           | SDKMAN: `sdk install java 25-open`                |
 | Python   | 3.13         | `pyenv install 3.13` or system installer          |
@@ -92,7 +93,7 @@ bash infra/scripts/check-env.sh
 
 ```bash
 cd apps/api-java
-gradle wrapper --gradle-version 9.5
+gradle wrapper --gradle-version 9.4.1
 cd ../..
 ```
 
@@ -180,7 +181,7 @@ Priority migration order:
 | TypeScript    | 5.9.x    | Latest stable.                                                 |
 | Spring Boot   | 4.0.5    | Major release (Spring Framework 7). Verify GA before prod use. |
 | Java          | 25       | Non-LTS (GA Sep 2025). Consider Java 21 LTS for long-term.    |
-| Gradle        | 9.5      | Latest Gradle 9.x series.                                     |
+| Gradle        | 9.4.1    | Latest stable (9.5 not yet released).                          |
 | FastAPI       | 0.135.3  | Stable.                                                        |
 | Python        | 3.13     | Latest stable.                                                 |
 | Nx            | 22.3     | Polyglot monorepo management.                                  |
