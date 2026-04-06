@@ -1,15 +1,11 @@
-import { defineConfig, loadEnv } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
 // NOTE: lovable-tagger has been intentionally removed.
 // This config is migration-ready from the Lovable project.
 
-export default defineConfig(({ mode }) => {
-  // Load env so VITE_* vars are available at build time
-  const env = loadEnv(mode, process.cwd(), "");
-
-  return {
+export default defineConfig(({ mode }) => ({
     server: {
       host: "::",
       port: 5173,
@@ -22,13 +18,12 @@ export default defineConfig(({ mode }) => {
       alias: {
         "@": path.resolve(__dirname, "./src"),
       },
+      // dedupe prevents duplicate React instances when workspace packages
+      // bring their own copies. @tanstack/query-core removed — it's internal
+      // to @tanstack/react-query and not resolvable as a top-level dep in pnpm.
       dedupe: [
         "react",
         "react-dom",
-        "react/jsx-runtime",
-        "react/jsx-dev-runtime",
-        "@tanstack/react-query",
-        "@tanstack/query-core",
       ],
     },
     build: {
@@ -36,8 +31,6 @@ export default defineConfig(({ mode }) => {
       sourcemap: mode !== "production",
     },
     define: {
-      // Expose env vars explicitly if needed (they are available via import.meta.env by default)
       __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
     },
-  };
-});
+  }));
