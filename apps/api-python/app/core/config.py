@@ -28,8 +28,8 @@ class Settings(BaseSettings):
     supabase_service_role_key: str = ""
     supabase_anon_key: str = ""
 
-    # ── Service-to-service ───────────────────────────────────────────────────
-    java_api_base_url: str = "http://localhost:8080"
+    # ── Internal service-to-service ─────────────────────────────────────────
+    internal_java_api_url: str = "http://localhost:8080"
 
     # ── CORS ─────────────────────────────────────────────────────────────────
     cors_allowed_origins: str = "http://localhost:5173"
