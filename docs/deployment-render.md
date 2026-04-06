@@ -60,7 +60,7 @@ In `render.yaml`, replace all placeholder values:
 
 Before pushing, run inside `apps/api-java/`:
 ```bash
-gradle wrapper --gradle-version 9.5
+gradle wrapper --gradle-version 9.4.1
 ```
 This generates the `gradlew` binary and `gradle-wrapper.jar`.
 Commit both to the repo — Render uses them for builds.
