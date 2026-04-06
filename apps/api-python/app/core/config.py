@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     app_port: int = 8000
     app_name: str = "shipsmart-api-python"
     app_version: str = "0.1.0"
+    log_level: str = "INFO"
 
     # ── Supabase ─────────────────────────────────────────────────────────────
     supabase_url: str = ""
@@ -34,10 +35,27 @@ class Settings(BaseSettings):
     # ── CORS ─────────────────────────────────────────────────────────────────
     cors_allowed_origins: str = "http://localhost:5173"
 
-    # ── AI providers (placeholder) ────────────────────────────────────────────
-    # TODO: Uncomment when LLM features are added
-    # openai_api_key: str = ""
-    # anthropic_api_key: str = ""
+    # ── LLM ──────────────────────────────────────────────────────────────────
+    llm_provider: str = ""  # "openai" or "" (empty = not configured)
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    anthropic_api_key: str = ""
+
+    # ── Embeddings ───────────────────────────────────────────────────────────
+    embedding_provider: str = ""  # "openai" or "" (empty = local placeholder)
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 256
+
+    # ── Vector store ─────────────────────────────────────────────────────────
+    vector_store_type: str = "memory"  # "memory" only for now
+    vector_store_path: str = ""
+
+    # ── RAG ───────────────────────────────────────────────────────────────────
+    rag_provider: str = ""
+    rag_top_k: int = 3
+    rag_chunk_size: int = 500
+    rag_chunk_overlap: int = 50
+    rag_documents_path: str = "data/documents"
 
     @property
     def cors_origins_list(self) -> list[str]:

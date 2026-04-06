@@ -10,21 +10,54 @@ Local dev:
 """
 
 from contextlib import asynccontextmanager
+
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes import health, info, orchestration, rag
 from app.core.config import settings
-from app.api.routes import health, orchestration
+from app.core.errors import register_error_handlers
+from app.core.logging import get_logger, setup_logging
+from app.core.middleware import RequestLoggingMiddleware
+from app.llm.client import create_llm_client
+from app.rag.embeddings import create_embedding_provider
+from app.rag.vector_store import create_vector_store
+
+setup_logging()
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle."""
-    # TODO: Add startup logic here (e.g., initialise DB connection pool, warm up LLM client)
-    print(f"[shipsmart-api-python] Starting in '{settings.app_env}' mode")
+    logger.info(
+        "Starting %s v%s in '%s' mode",
+        settings.app_name, settings.app_version, settings.app_env,
+    )
+
+    # Shared HTTP client for calling the Java API and external services
+    app.state.http_client = httpx.AsyncClient(
+        base_url=settings.internal_java_api_url,
+        timeout=30.0,
+    )
+
+    # RAG pipeline components
+    embedding_provider = create_embedding_provider()
+    vector_store = create_vector_store()
+    llm_client = create_llm_client()
+    app.state.rag = {
+        "embedding_provider": embedding_provider,
+        "vector_store": vector_store,
+        "llm_client": llm_client,
+    }
+    logger.info("RAG pipeline initialized (embedding=%s, llm=%s)",
+                type(embedding_provider).__name__, type(llm_client).__name__)
+
     yield
-    # TODO: Add shutdown cleanup here
-    print("[shipsmart-api-python] Shutting down")
+
+    await app.state.http_client.aclose()
+    logger.info("Shutting down %s", settings.app_name)
 
 
 app = FastAPI(
@@ -36,7 +69,11 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# ── CORS ──────────────────────────────────────────────────────────────────────
+# ── Error handlers ───────────────────────────────────────────────────────────
+register_error_handlers(app)
+
+# ── Middleware (order matters — last added runs first) ─────────────��──────────
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -45,11 +82,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routes ────────────────────────────────────────────────────────────────────
+# ── Routes ───────────────────────────────────────────────────────────────────
 app.include_router(health.router)
+app.include_router(info.router, prefix="/api/v1")
 app.include_router(orchestration.router, prefix="/api/v1")
+app.include_router(rag.router, prefix="/api/v1")
 
-# ── Root ──────────────────────────────────────────────────────────────────────
+
+# ── Root ─────────────────────────────────────────────────────────────────────
 @app.get("/", include_in_schema=False)
 async def root():
-    return {"service": "shipsmart-api-python", "version": settings.app_version}
+    return {"service": settings.app_name, "version": settings.app_version}

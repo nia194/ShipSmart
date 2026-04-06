@@ -5,33 +5,18 @@
 # Services:
 #   1. web          → React frontend (Static Site on CDN)
 #   2. api-java     → Spring Boot backend (Web Service)
-#   3. api-python   → FastAPI backend (Web Service)
+#   3. api-python   → FastAPI backend (Web Service) — skeleton only, not active yet
 #
-# WHY Static Site for React:
-#   The React app is a Vite SPA with no server-side rendering. Render Static
-#   Sites are free, deploy from CDN (faster globally), and have zero cold starts.
-#   Switch to a Web Service only if you need SSR or server-side auth cookies.
-#
-# HOW services communicate:
-#   - Frontend calls both backends directly via public Render URLs.
-#   - Java and Python call each other via INTERNAL_*_API_URL env vars.
-#   - On Render paid plans, consider using private service URLs for backend-
-#     to-backend calls (e.g., https://api-java:10000 within the Render network).
-#
-# BEFORE DEPLOYING: Replace all [PLACEHOLDER] values in this file.
+# BEFORE DEPLOYING: Replace all [PLACEHOLDER] values in this file with real
+# Render service names and Supabase credentials.
 # ─────────────────────────────────────────────────────────────────────────────
 
 services:
 
   # ── React Frontend (Static Site) ──────────────────────────────────────────
-  # Deployed as a Static Site. Vite builds into apps/web/dist.
-  # The SPA rewrite rule ensures client-side routing works.
   - type: web
-    name: [RENDER_SERVICE_NAME_WEB]
+    name: shipsmart-web
     env: static
-    # rootDir controls what triggers auto-deploys and is the build working dir.
-    # Since pnpm workspace resolution needs the monorepo root, the build command
-    # navigates up before installing deps, then returns to build the web app.
     rootDir: apps/web
     buildCommand: cd ../.. && pnpm install --frozen-lockfile && cd apps/web && pnpm build
     staticPublishPath: dist
@@ -46,17 +31,23 @@ services:
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
       - key: VITE_JAVA_API_BASE_URL
-        value: https://[RENDER_SERVICE_NAME_JAVA].onrender.com
+        value: https://shipsmart-api-java.onrender.com
       - key: VITE_PYTHON_API_BASE_URL
-        value: https://[RENDER_SERVICE_NAME_PYTHON].onrender.com
+        value: https://shipsmart-api-python.onrender.com
       - key: VITE_APP_ENV
         value: production
+      # Feature flags — Java backend is the default in production.
+      # Set any to "false" to fall back to Supabase edge functions.
+      - key: VITE_USE_JAVA_QUOTES
+        value: "true"
+      - key: VITE_USE_JAVA_SAVED_OPTIONS
+        value: "true"
+      - key: VITE_USE_JAVA_BOOKING_REDIRECT
+        value: "true"
 
   # ── Spring Boot Java API (Web Service) ───────────────────────────────────
-  # Java backend owns transactional business logic (shipments, quotes, auth).
-  # Render injects $PORT automatically — application.yml reads it.
   - type: web
-    name: [RENDER_SERVICE_NAME_JAVA]
+    name: shipsmart-api-java
     env: java
     rootDir: apps/api-java
     buildCommand: ./gradlew build -x test
@@ -64,9 +55,10 @@ services:
     plan: starter
     healthCheckPath: /api/v1/health
     envVars:
-      # Render injects PORT automatically. Spring Boot reads it via application.yml.
       - key: SPRING_PROFILES_ACTIVE
         value: production
+      - key: REQUIRE_JWT_SECRET
+        value: "true"
       - key: DATABASE_URL
         sync: false
       - key: DATABASE_USERNAME
@@ -75,22 +67,19 @@ services:
         sync: false
       - key: SUPABASE_URL
         sync: false
-      - key: SUPABASE_ANON_KEY
-        sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: SUPABASE_JWT_SECRET
         sync: false
       - key: CORS_ALLOWED_ORIGINS
-        value: https://[RENDER_SERVICE_NAME_WEB].onrender.com
+        value: https://shipsmart-web.onrender.com
       - key: INTERNAL_PYTHON_API_URL
-        value: https://[RENDER_SERVICE_NAME_PYTHON].onrender.com
+        value: https://shipsmart-api-python.onrender.com
 
   # ── FastAPI Python API (Web Service) ─────────────────────────────────────
-  # Python backend handles AI/orchestration workflows, not core transactional data.
-  # Render injects $PORT automatically — uvicorn reads it from the start command.
+  # Skeleton only — no active features. Deploy when AI/orchestration work begins.
   - type: web
-    name: [RENDER_SERVICE_NAME_PYTHON]
+    name: shipsmart-api-python
     env: python
     rootDir: apps/api-python
     buildCommand: pip install uv && uv sync
@@ -107,6 +96,6 @@ services:
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: INTERNAL_JAVA_API_URL
-        value: https://[RENDER_SERVICE_NAME_JAVA].onrender.com
+        value: https://shipsmart-api-java.onrender.com
       - key: CORS_ALLOWED_ORIGINS
-        value: https://[RENDER_SERVICE_NAME_WEB].onrender.com
+        value: https://shipsmart-web.onrender.com

@@ -2,108 +2,80 @@
 
 ## Service Architecture on Render
 
-| Service        | Render Type   | Plan    | Health Check         |
-|----------------|---------------|---------|----------------------|
-| `web` (React)  | Static Site   | Free    | (automatic)          |
-| `api-java`     | Web Service   | Starter | `/api/v1/health`     |
-| `api-python`   | Web Service   | Starter | `/health`            |
-
-## Why React as a Static Site (not Web Service)?
-
-The React app is a Vite-bundled SPA with no server-side rendering.
-A Static Site on Render:
-- Is free
-- Serves from a CDN (faster globally)
-- Has no cold starts
-- Supports SPA routing via the `/*` rewrite rule in `render.yaml`
-
-**Switch to a Web Service only if you need SSR, server-side auth cookies, or dynamic headers.**
+| Service        | Render Type   | Plan    | Health Check         | Status    |
+|----------------|---------------|---------|----------------------|-----------|
+| `web` (React)  | Static Site   | Free    | (automatic)          | Active    |
+| `api-java`     | Web Service   | Starter | `/api/v1/health`     | Active    |
+| `api-python`   | Web Service   | Starter | `/health`            | Skeleton  |
 
 ## Initial Deployment Steps
 
-### Step 1: Connect the monorepo to Render
+### Step 1: Prepare the repo
 
-1. Push the ShipSmart monorepo to GitHub.
-2. Go to [render.com](https://render.com) → New → Blueprint.
-3. Connect your GitHub repo and select `render.yaml` as the blueprint.
-4. Render will detect all three services.
+1. Ensure `gradle-wrapper.jar` is committed:
+   ```bash
+   cd apps/api-java
+   gradle wrapper --gradle-version 8.12
+   git add gradle/wrapper/gradle-wrapper.jar
+   ```
 
-### Step 2: Fill in environment variables
+2. Replace placeholder service names in `render.yaml` if you use different names
+   than `shipsmart-web`, `shipsmart-api-java`, `shipsmart-api-python`.
 
-Before services can start, set these in the Render dashboard for each service:
+3. Push to GitHub.
 
-**For `web` (Static Site):**
-- `VITE_SUPABASE_URL` — from Supabase dashboard
-- `VITE_SUPABASE_ANON_KEY` — from Supabase dashboard
+### Step 2: Create Blueprint on Render
 
-**For `api-java` (Web Service):**
-- `DATABASE_URL` — Supabase Postgres connection string (with pooler)
-- `DATABASE_USERNAME` — Supabase DB username
-- `DATABASE_PASSWORD` — Supabase DB password
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_JWT_SECRET`
+1. Go to [render.com](https://render.com) → New → Blueprint
+2. Connect your GitHub repo and select `render.yaml`
+3. Render will detect all three services
 
-**For `api-python` (Web Service):**
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_ANON_KEY`
+### Step 3: Set environment variables
 
-### Step 3: Replace placeholder service names
+Set secrets in the Render dashboard for each service.
+See `docs/production-env-matrix.md` for the complete list.
 
-In `render.yaml`, replace all placeholder values:
-- `[RENDER_SERVICE_NAME_WEB]` → e.g., `shipsmart-web`
-- `[RENDER_SERVICE_NAME_JAVA]` → e.g., `shipsmart-api-java`
-- `[RENDER_SERVICE_NAME_PYTHON]` → e.g., `shipsmart-api-python`
+**Critical secrets (not in render.yaml):**
+- `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for web
+- `DATABASE_URL`, `DATABASE_USERNAME`, `DATABASE_PASSWORD` for api-java
+- `SUPABASE_JWT_SECRET` and `SUPABASE_SERVICE_ROLE_KEY` for api-java
 
-### Step 4: Initialize Gradle wrapper (for Java)
+### Step 4: Deploy and verify
 
-Before pushing, run inside `apps/api-java/`:
-```bash
-gradle wrapper --gradle-version 9.4.1
+Follow the deployment order in `docs/deployment-cutover-plan.md`:
+1. api-java first → verify health check
+2. web second → verify with feature flags
+3. api-python optional
+
+Run the smoke tests in `docs/post-deploy-smoke-test.md`.
+
+## Build Commands
+
+| Service | Build | Start |
+|---------|-------|-------|
+| web | `cd ../.. && pnpm install --frozen-lockfile && cd apps/web && pnpm build` | (static) |
+| api-java | `./gradlew build -x test` | `java -jar build/libs/shipsmart-api-java-0.1.0-SNAPSHOT.jar` |
+| api-python | `pip install uv && uv sync` | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
+
+## Service Communication
+
 ```
-This generates the `gradlew` binary and `gradle-wrapper.jar`.
-Commit both to the repo — Render uses them for builds.
-
-### Step 5: Verify build commands
-
-Java: `./gradlew build -x test`
-Python: `pip install uv && uv sync --frozen`
-Web: `pnpm install && pnpm build`
-
-## Environment Variable Cross-References
-
-The services reference each other via env vars:
+Frontend  → VITE_JAVA_API_BASE_URL   → api-java (public URL)
+Frontend  → VITE_PYTHON_API_BASE_URL → api-python (public URL)
+api-java  → INTERNAL_PYTHON_API_URL  → api-python
+api-python → INTERNAL_JAVA_API_URL   → api-java
 ```
-web         → VITE_JAVA_API_BASE_URL  = https://[api-java].onrender.com
-web         → VITE_PYTHON_API_BASE_URL = https://[api-python].onrender.com
-api-java    → PYTHON_API_BASE_URL     = https://[api-python].onrender.com
-api-python  → JAVA_API_BASE_URL       = https://[api-java].onrender.com
-```
-
-These cross-references are already set in `render.yaml`. Update the placeholders.
-
-## Monorepo-Aware Builds on Render
-
-Render supports monorepos via `rootDir` in `render.yaml`.
-Each service specifies its own `rootDir`:
-- `apps/web` for the frontend
-- `apps/api-java` for Spring Boot
-- `apps/api-python` for FastAPI
-
-Render will only rebuild a service when files in its `rootDir` change
-(if using Render's auto-deploy with GitHub push).
 
 ## Cold Starts
 
-Render Starter plan Web Services will sleep after inactivity and have cold starts (~30s).
-Upgrade to a paid plan or add an uptime monitor (e.g., Better Uptime) to avoid this.
-
-## Logs
-
-Access logs per service in the Render dashboard under each service → Logs.
+Render Starter plan services sleep after 15 minutes of inactivity.
+First request after sleep takes ~30s. Options:
+- Upgrade to paid plan
+- Add an uptime monitor (e.g., Better Uptime, UptimeRobot) pinging `/api/v1/health`
 
 ## Custom Domains
 
-Set a custom domain per service in Render dashboard → Settings → Custom Domain.
-Update CORS env vars in all services when custom domains are added.
+When adding custom domains:
+1. Configure in Render dashboard → Settings → Custom Domain
+2. Update `CORS_ALLOWED_ORIGINS` on both api-java and api-python to include the custom domain
+3. Update `VITE_JAVA_API_BASE_URL` if the Java API gets a custom domain
