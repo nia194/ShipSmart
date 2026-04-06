@@ -17,7 +17,16 @@
       "Bash(mkdir -p \"C:/Users/ashis/OneDrive/Documents/ShipSmart/supabase/functions\")",
       "Bash(cp -r \"C:/Users/ashis/OneDrive/Documents/lovable-source-code/supabase/functions/\"* \"C:/Users/ashis/OneDrive/Documents/ShipSmart/supabase/functions/\")",
       "Bash(pnpm --filter web exec tsc --noEmit)",
-      "Bash(pnpm --filter web build)"
+      "Bash(pnpm --filter web build)",
+      "Bash(./gradlew build:*)",
+      "Bash(java -version)",
+      "Bash(/usr/libexec/java_home:*)",
+      "Bash(brew list:*)",
+      "Bash(brew install:*)",
+      "Bash(export JAVA_HOME=/usr/local/Cellar/openjdk/18.0.1)",
+      "Bash(/usr/local/Cellar/openjdk/18.0.1/bin/java -version)",
+      "Bash(./gradlew test:*)",
+      "Bash(grep tests=:*)"
     ]
   }
 }

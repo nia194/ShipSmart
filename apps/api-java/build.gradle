@@ -1,17 +1,14 @@
 // ShipSmart — Java API Build
-// Spring Boot: 4.0.5  |  Java: 25  |  Gradle: 9.4.1
+// Spring Boot: 3.4.4  |  Java: 17+  |  Gradle: 8.12
 //
 // VERSION NOTICE:
-//   - Spring Boot 4.0.x is a major release (Spring Framework 7). Verify GA status
-//     before production deployment.
-//   - Gradle 9.4.1 is the latest stable. Run `./gradlew wrapper` to initialise
-//     the wrapper if not already done.
-//   - Java 25 (GA September 2025) is a non-LTS release. For long-term production
-//     stability, consider Java 21 LTS when Spring Boot 4 support is confirmed.
+//   - Spring Boot 3.4.x is the latest stable 3.x release (Spring Framework 6).
+//   - Java 17+ (LTS). Toolchain set to 17; works with JDK 17, 18, 21, etc.
+//   - Gradle 8.12 is a stable release compatible with Java 17+.
 
 plugins {
     id 'java'
-    id 'org.springframework.boot' version '4.0.5'
+    id 'org.springframework.boot' version '3.4.4'
     id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -19,9 +16,8 @@ group = 'com.shipsmart'
 version = '0.1.0-SNAPSHOT'
 
 java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
-    }
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 configurations {
@@ -41,16 +37,14 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-validation'
 
     // ── Database ─────────────────────────────────────────────────────────────
-    // TODO: Add Spring Data JPA or Spring Data JDBC when Supabase Postgres
-    // connection is configured. Connection string comes from DATABASE_URL env var.
-    // Uncomment when ready:
-    // implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    // runtimeOnly 'org.postgresql:postgresql'
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    runtimeOnly 'org.postgresql:postgresql'
 
-    // ── Security ─────────────────────────────────────────────────────────────
-    // TODO: Add Spring Security + JWT validation when auth is implemented.
-    // Supabase JWTs can be validated using the SUPABASE_JWT_SECRET.
-    // implementation 'org.springframework.boot:spring-boot-starter-security'
+    // ── JWT ──────────────────────────────────────────────────────────────────
+    // Lightweight Supabase JWT verification (no Spring Security).
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
     // ── Utilities ────────────────────────────────────────────────────────────
     compileOnly 'org.projectlombok:lombok'
@@ -61,6 +55,7 @@ dependencies {
 
     // ── Test ─────────────────────────────────────────────────────────────────
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'com.h2database:h2'
 }
 
 tasks.named('test') {
