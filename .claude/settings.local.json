@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp \"C:/Users/ashis/OneDrive/Documents/lovable-source-code/public/favicon.ico\" \"C:/Users/ashis/OneDrive/Documents/ShipSmart/apps/web/public/favicon.ico\")",
+      "Bash(cp \"C:/Users/ashis/OneDrive/Documents/lovable-source-code/public/placeholder.svg\" \"C:/Users/ashis/OneDrive/Documents/ShipSmart/apps/web/public/placeholder.svg\")",
+      "Bash(cp \"C:/Users/ashis/OneDrive/Documents/lovable-source-code/supabase/migrations/20260404030225_32fa9065-afb4-4fb9-9329-278530382e4c.sql\" \"C:/Users/ashis/OneDrive/Documents/ShipSmart/supabase/migrations/20260404030225_32fa9065-afb4-4fb9-9329-278530382e4c.sql\")",
+      "Bash(cp \"C:/Users/ashis/OneDrive/Documents/lovable-source-code/supabase/migrations/20260404030242_8505bf0b-ff00-4416-bb2a-2430c206ff59.sql\" \"C:/Users/ashis/OneDrive/Documents/ShipSmart/supabase/migrations/20260404030242_8505bf0b-ff00-4416-bb2a-2430c206ff59.sql\")",
+      "Bash(npx nx:*)",
+      "Bash(pnpm install:*)",
+      "Bash(npm --version)",
+      "Bash(npm install:*)",
+      "Bash(pnpm nx:*)",
+      "Bash(mkdir -p \"C:/Users/ashis/OneDrive/Documents/ShipSmart/apps/web/src/components/ui\")",
+      "Bash(cp \"C:/Users/ashis/OneDrive/Documents/lovable-source-code/src/components/ui/\"* \"C:/Users/ashis/OneDrive/Documents/ShipSmart/apps/web/src/components/ui/\")",
+      "Bash(mkdir -p \"C:/Users/ashis/OneDrive/Documents/ShipSmart/apps/web/src/components/shipping\")",
+      "Bash(cp \"C:/Users/ashis/OneDrive/Documents/lovable-source-code/src/components/shipping/\"* \"C:/Users/ashis/OneDrive/Documents/ShipSmart/apps/web/src/components/shipping/\")",
+      "Bash(mkdir -p \"C:/Users/ashis/OneDrive/Documents/ShipSmart/supabase/functions\")",
+      "Bash(cp -r \"C:/Users/ashis/OneDrive/Documents/lovable-source-code/supabase/functions/\"* \"C:/Users/ashis/OneDrive/Documents/ShipSmart/supabase/functions/\")",
+      "Bash(pnpm --filter web exec tsc --noEmit)",
+      "Bash(pnpm --filter web build)"
+    ]
+  }
+}
