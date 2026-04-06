@@ -3,9 +3,10 @@ import { Logo } from "./Logo";
 import { BookmarkIcon } from "./BookmarkIcon";
 import { PriceBreakdown } from "./SharedUI";
 import { TIER_BADGES, type ShippingService } from "@/lib/shipping-data";
-// TODO: [MIGRATION] This component calls the legacy "generate-book-redirect" Supabase edge function.
-// Migrate to Java/Python API per docs/service-boundaries.md when backend is ready.
+// Booking redirect: toggle between legacy Supabase edge function and new Java API.
+// Set VITE_USE_JAVA_BOOKING_REDIRECT=true to use the new Java API.
 import { supabase } from "@/integrations/supabase/client";
+import { apiConfig, javaApi } from "@/config/api";
 
 const COLS = "36px 1fr 60px 70px auto 36px 20px";
 
@@ -91,16 +92,26 @@ export const Row = ({ svc, openId, onToggle, idx, animBase = 0, bookUrl, isSaved
   };
 
   const trackRedirect = () => {
-    supabase.functions.invoke("generate-book-redirect", {
-      body: {
-        serviceId: svc.id,
-        carrier: svc.carrier,
-        serviceName: svc.name,
-        redirectUrl: bookUrl,
-        origin: origin || "",
-        destination: dest || "",
-      },
-    }).catch(() => {});
+    const payload = {
+      serviceId: svc.id,
+      carrier: svc.carrier,
+      serviceName: svc.name,
+      redirectUrl: bookUrl,
+      origin: origin || "",
+      destination: dest || "",
+    };
+
+    if (apiConfig.useJavaBookingRedirect) {
+      fetch(javaApi.bookingRedirect(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch(() => {});
+    } else {
+      supabase.functions.invoke("generate-book-redirect", {
+        body: payload,
+      }).catch(() => {});
+    }
   };
 
   return (

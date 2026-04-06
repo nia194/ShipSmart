@@ -27,6 +27,7 @@ apps/api-java/build/
 apps/api-java/out/
 *.class
 *.jar
+!apps/api-java/gradle/wrapper/gradle-wrapper.jar
 *.war
 *.ear
 HELP.md

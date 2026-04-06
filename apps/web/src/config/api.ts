@@ -33,6 +33,13 @@ export const apiConfig = {
    * Defaults to false (legacy Supabase edge functions).
    */
   useJavaSavedOptions: import.meta.env.VITE_USE_JAVA_SAVED_OPTIONS === "true",
+
+  /**
+   * Feature flag: use the new Java API for booking redirect tracking instead of
+   * the legacy Supabase edge function. Set VITE_USE_JAVA_BOOKING_REDIRECT=true to enable.
+   * Defaults to false (legacy Supabase edge function).
+   */
+  useJavaBookingRedirect: import.meta.env.VITE_USE_JAVA_BOOKING_REDIRECT === "true",
 } as const;
 
 /** Pre-built API path helpers */
@@ -41,6 +48,7 @@ export const javaApi = {
   shipments: () => `${apiConfig.javaApiBaseUrl}/api/v1/shipments`,
   quotes: () => `${apiConfig.javaApiBaseUrl}/api/v1/quotes`,
   savedOptions: () => `${apiConfig.javaApiBaseUrl}/api/v1/saved-options`,
+  bookingRedirect: () => `${apiConfig.javaApiBaseUrl}/api/v1/bookings/redirect`,
 } as const;
 
 export const pythonApi = {

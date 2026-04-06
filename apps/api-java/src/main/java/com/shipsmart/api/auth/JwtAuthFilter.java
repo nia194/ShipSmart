@@ -3,59 +3,77 @@ package com.shipsmart.api.auth;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
-import jakarta.servlet.*;
+import jakarta.annotation.PostConstruct;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.annotation.Order;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
 
 import javax.crypto.SecretKey;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.UUID;
 
 /**
- * Lightweight JWT filter for Supabase token verification.
+ * JWT authentication filter for Supabase token verification.
  * <p>
  * Extracts the user ID (sub claim) from the JWT in the Authorization header
- * and stores it as a request attribute. Endpoints that require auth check
- * for this attribute; endpoints that don't (like /api/v1/quotes) ignore it.
- * <p>
- * This is intentionally NOT Spring Security — just a servlet filter.
+ * and stores it in the Spring SecurityContext. Runs on every request but
+ * does NOT enforce auth — that is handled by the SecurityFilterChain rules.
  */
 @Component
-@Order(1)
-public class JwtAuthFilter implements Filter {
+public class JwtAuthFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(JwtAuthFilter.class);
-    public static final String USER_ID_ATTR = "shipsmart.userId";
 
     @Value("${shipsmart.supabase.jwt-secret:}")
     private String jwtSecret;
 
-    @Override
-    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
-            throws IOException, ServletException {
+    @Value("${shipsmart.security.require-jwt-secret:false}")
+    private boolean requireJwtSecret;
 
-        HttpServletRequest httpReq = (HttpServletRequest) request;
-        String authHeader = httpReq.getHeader("Authorization");
-
-        if (authHeader != null && authHeader.startsWith("Bearer ")) {
-            String token = authHeader.substring(7);
-            String userId = extractUserId(token);
-            if (userId != null) {
-                httpReq.setAttribute(USER_ID_ATTR, userId);
-            }
+    @PostConstruct
+    void validateConfig() {
+        if (requireJwtSecret && (jwtSecret == null || jwtSecret.isBlank())) {
+            throw new IllegalStateException("SUPABASE_JWT_SECRET must be set when shipsmart.security.require-jwt-secret=true (production)");
         }
+    }
 
-        chain.doFilter(request, response);
+    @Override
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+            throws ServletException, IOException {
+
+        MDC.put("requestId", UUID.randomUUID().toString().substring(0, 8));
+        try {
+            String authHeader = request.getHeader("Authorization");
+
+            if (authHeader != null && authHeader.startsWith("Bearer ")) {
+                String token = authHeader.substring(7);
+                String userId = extractUserId(token);
+                if (userId != null) {
+                    var auth = new UsernamePasswordAuthenticationToken(userId, null, Collections.emptyList());
+                    SecurityContextHolder.getContext().setAuthentication(auth);
+                }
+            }
+
+            filterChain.doFilter(request, response);
+        } finally {
+            SecurityContextHolder.clearContext();
+            MDC.clear();
+        }
     }
 
     private String extractUserId(String token) {
         if (jwtSecret == null || jwtSecret.isBlank()) {
-            // No secret configured — try decoding without verification (dev mode)
             log.warn("SUPABASE_JWT_SECRET not set; skipping JWT signature verification");
             return extractUserIdUnsafe(token);
         }
@@ -80,14 +98,12 @@ public class JwtAuthFilter implements Filter {
      */
     private String extractUserIdUnsafe(String token) {
         try {
-            // JWT has 3 parts: header.payload.signature
             String[] parts = token.split("\\.");
             if (parts.length < 2) return null;
             String payload = new String(
                     java.util.Base64.getUrlDecoder().decode(parts[1]),
                     StandardCharsets.UTF_8
             );
-            // Simple JSON extraction for "sub" field
             var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             var node = mapper.readTree(payload);
             return node.has("sub") ? node.get("sub").asText() : null;

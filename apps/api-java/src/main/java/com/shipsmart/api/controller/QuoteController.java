@@ -4,8 +4,9 @@ import com.shipsmart.api.auth.AuthHelper;
 import com.shipsmart.api.dto.QuoteRequest;
 import com.shipsmart.api.dto.QuoteResponse;
 import com.shipsmart.api.service.QuoteService;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,6 +20,8 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/quotes")
 public class QuoteController {
+
+    private static final Logger log = LoggerFactory.getLogger(QuoteController.class);
 
     private final QuoteService quoteService;
 
@@ -35,11 +38,11 @@ public class QuoteController {
      * If a valid JWT is present, the userId is attributed to the shipment request.
      */
     @PostMapping
-    public ResponseEntity<QuoteResponse> generateQuotes(
-            HttpServletRequest httpRequest,
-            @Valid @RequestBody QuoteRequest request
-    ) {
-        String userId = AuthHelper.getUserId(httpRequest).orElse(null);
+    public ResponseEntity<QuoteResponse> generateQuotes(@Valid @RequestBody QuoteRequest request) {
+        String userId = AuthHelper.getUserId().orElse(null);
+        log.info("POST /quotes origin={} dest={} packages={} user={}",
+                request.origin(), request.destination(), request.packages().size(),
+                userId != null ? userId : "anonymous");
         QuoteResponse response = quoteService.generateQuotes(request, userId);
         return ResponseEntity.ok(response);
     }
