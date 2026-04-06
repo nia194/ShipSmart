@@ -1,14 +1,13 @@
-// TODO: [MIGRATION] This hook calls legacy Supabase edge functions:
-//   - "get-saved-options"
-//   - "save-option"
-//   - "remove-saved-option"
-// Migrate to Java/Python API per docs/service-boundaries.md when backend is ready.
+// Saved options hook with backend toggle.
+// Set VITE_USE_JAVA_SAVED_OPTIONS=true to use the new Java API.
+// Defaults to the legacy Supabase edge functions.
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import type { ShippingService } from "@/lib/shipping-data";
 import { useToast } from "@/hooks/use-toast";
+import { apiConfig, javaApi } from "@/config/api";
 
 export interface SavedOption {
   id: string;
@@ -28,6 +27,25 @@ export function buildSnapshotKey(svcId: string, origin: string, dest: string, dr
   return `${svcId}|${origin}|${dest}|${dropDate}|${delivDate}`;
 }
 
+/** Get the current Supabase access token for Java API calls. */
+async function getAccessToken(): Promise<string | null> {
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+/** Helper for authenticated Java API fetch calls. */
+async function javaFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = await getAccessToken();
+  return fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  });
+}
+
 export function useSavedOptions() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -43,11 +61,18 @@ export function useSavedOptions() {
     if (!user) { setSavedOptions([]); return; }
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("get-saved-options");
-      if (error) throw error;
-      setSavedOptions((data as SavedOption[]) || []);
+      if (apiConfig.useJavaSavedOptions) {
+        const res = await javaFetch(javaApi.savedOptions());
+        if (!res.ok) throw new Error(`Failed to fetch saved options (${res.status})`);
+        const data = await res.json();
+        setSavedOptions((data as SavedOption[]) || []);
+      } else {
+        const { data, error } = await supabase.functions.invoke("get-saved-options");
+        if (error) throw error;
+        setSavedOptions((data as SavedOption[]) || []);
+      }
     } catch {
-      // silent fail on load
+      // silent fail on load — matches legacy behavior
     } finally {
       setLoading(false);
     }
@@ -73,7 +98,12 @@ export function useSavedOptions() {
       );
       if (!option) return;
       try {
-        await supabase.functions.invoke("remove-saved-option", { body: { id: option.id } });
+        if (apiConfig.useJavaSavedOptions) {
+          const res = await javaFetch(`${javaApi.savedOptions()}/${option.id}`, { method: "DELETE" });
+          if (!res.ok) throw new Error("Failed to remove");
+        } else {
+          await supabase.functions.invoke("remove-saved-option", { body: { id: option.id } });
+        }
         setSavedOptions(prev => prev.filter(s => s.id !== option.id));
         toast({ title: "Removed", description: `${svc.name} removed from saved.` });
       } catch {
@@ -82,33 +112,48 @@ export function useSavedOptions() {
     } else {
       // save
       try {
-        const { data, error } = await supabase.functions.invoke("save-option", {
-          body: {
-            quoteServiceId: svc.id,
-            carrier: svc.carrier,
-            serviceName: svc.name,
-            tier: svc.tier,
-            price: svc.price,
-            originalPrice: svc.originalPrice,
-            transitDays: svc.transitDays,
-            estimatedDelivery: svc.date,
-            deliverByTime: svc.deliverBy,
-            guaranteed: svc.guaranteed,
-            promo: svc.promo,
-            aiRecommendation: svc.ai,
-            breakdown: svc.breakdown,
-            details: svc.details,
-            features: svc.features,
-            origin: context.origin,
-            destination: context.dest,
-            dropOffDate: context.dropDate,
-            expectedDeliveryDate: context.delivDate,
-            packageSummary: context.pkgSummary,
-            bookUrl: context.bookUrl,
-          },
-        });
-        if (error) throw error;
-        const saved = data as SavedOption;
+        const body = {
+          quoteServiceId: svc.id,
+          carrier: svc.carrier,
+          serviceName: svc.name,
+          tier: svc.tier,
+          price: svc.price,
+          originalPrice: svc.originalPrice,
+          transitDays: svc.transitDays,
+          estimatedDelivery: svc.date,
+          deliverByTime: svc.deliverBy,
+          guaranteed: svc.guaranteed,
+          promo: svc.promo,
+          aiRecommendation: svc.ai,
+          breakdown: svc.breakdown,
+          details: svc.details,
+          features: svc.features,
+          origin: context.origin,
+          destination: context.dest,
+          dropOffDate: context.dropDate,
+          expectedDeliveryDate: context.delivDate,
+          packageSummary: context.pkgSummary,
+          bookUrl: context.bookUrl,
+        };
+
+        let saved: SavedOption;
+
+        if (apiConfig.useJavaSavedOptions) {
+          const res = await javaFetch(javaApi.savedOptions(), {
+            method: "POST",
+            body: JSON.stringify(body),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: res.statusText }));
+            throw new Error(err.error || "Failed to save");
+          }
+          saved = await res.json();
+        } else {
+          const { data, error } = await supabase.functions.invoke("save-option", { body });
+          if (error) throw error;
+          saved = data as SavedOption;
+        }
+
         setSavedOptions(prev => [saved, ...prev]);
         toast({ title: "Saved!", description: `${svc.name} saved.` });
       } catch {
@@ -119,7 +164,12 @@ export function useSavedOptions() {
 
   const removeSaved = async (id: string) => {
     try {
-      await supabase.functions.invoke("remove-saved-option", { body: { id } });
+      if (apiConfig.useJavaSavedOptions) {
+        const res = await javaFetch(`${javaApi.savedOptions()}/${id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error("Failed to remove");
+      } else {
+        await supabase.functions.invoke("remove-saved-option", { body: { id } });
+      }
       setSavedOptions(prev => prev.filter(s => s.id !== id));
       toast({ title: "Removed" });
     } catch {

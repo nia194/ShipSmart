@@ -19,6 +19,20 @@ export const apiConfig = {
   supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY,
 
   appEnv: import.meta.env.VITE_APP_ENV ?? "development",
+
+  /**
+   * Feature flag: use the new Java API for quote generation instead of
+   * the legacy Supabase edge function. Set VITE_USE_JAVA_QUOTES=true to enable.
+   * Defaults to false (legacy Supabase edge function).
+   */
+  useJavaQuotes: import.meta.env.VITE_USE_JAVA_QUOTES === "true",
+
+  /**
+   * Feature flag: use the new Java API for saved options instead of
+   * the legacy Supabase edge functions. Set VITE_USE_JAVA_SAVED_OPTIONS=true to enable.
+   * Defaults to false (legacy Supabase edge functions).
+   */
+  useJavaSavedOptions: import.meta.env.VITE_USE_JAVA_SAVED_OPTIONS === "true",
 } as const;
 
 /** Pre-built API path helpers */
@@ -26,6 +40,7 @@ export const javaApi = {
   health: () => `${apiConfig.javaApiBaseUrl}/api/v1/health`,
   shipments: () => `${apiConfig.javaApiBaseUrl}/api/v1/shipments`,
   quotes: () => `${apiConfig.javaApiBaseUrl}/api/v1/quotes`,
+  savedOptions: () => `${apiConfig.javaApiBaseUrl}/api/v1/saved-options`,
 } as const;
 
 export const pythonApi = {
