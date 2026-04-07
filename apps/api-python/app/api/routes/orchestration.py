@@ -1,59 +1,95 @@
 """
 Orchestration routes.
-This service is reserved for AI/orchestration/helper workflows.
-It is NOT the system-of-record for shipments or quotes.
+Handles tool-based orchestration: discover tools, execute tools, run queries.
 
-The Lovable project had Supabase Edge Functions for AI workflows:
-  - ai-shipping-advisor
-  - ai-tracking-advisor
-  - ai-priority-interpreter
-  - ai-notification-generator
-  - escalate-tracking-issue
-  - import-tracking-from-email
-  - find-dropoff-locations
-  - validate-address
-
-TODO: Decide which of these become routes here vs stay as Supabase Edge Functions.
-      See docs/migration-from-lovable.md and docs/service-boundaries.md.
+This service is NOT the system-of-record for shipments or quotes.
+Spring Boot owns transactional logic. Python provides AI-assist and tooling.
 """
 
-from fastapi import APIRouter
-from pydantic import BaseModel
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Request
+from pydantic import BaseModel, Field
+
+from app.core.errors import AppError
+from app.services.orchestration_service import (
+    execute_tool,
+    run_orchestration,
+)
 
 router = APIRouter(prefix="/orchestration", tags=["orchestration"])
 
 
+# ── Schemas ──────────────────────────────────────────────────────────────────
+
 class OrchestrationRequest(BaseModel):
-    # TODO: Define proper request schemas in app/schemas/ when workflows are implemented
-    workflow: str
-    payload: dict
-
-
-class OrchestrationResponse(BaseModel):
-    workflow: str
-    status: str
-    result: dict | None = None
-    message: str | None = None
-
-
-@router.post("/run", response_model=OrchestrationResponse)
-async def run_workflow(request: OrchestrationRequest) -> OrchestrationResponse:
-    """
-    Run an AI/orchestration workflow.
-    TODO: Route to specific workflow handlers based on request.workflow.
-    TODO: Integrate LLM provider when AI features are ready.
-    Do NOT implement fake AI logic — use clear placeholders.
-    """
-    return OrchestrationResponse(
-        workflow=request.workflow,
-        status="not_implemented",
-        message=f"Workflow '{request.workflow}' is not yet implemented. "
-                "Add handler in app/services/.",
+    query: str = Field(..., min_length=1, max_length=2000)
+    tool: str | None = Field(
+        None,
+        description="Explicit tool name. If omitted, tool is auto-selected from query.",
+    )
+    params: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters for the tool.",
     )
 
 
-# TODO: Add more specific routes as workflows are defined, e.g.:
-# @router.post("/advisor/shipping")   — shipping recommendation
-# @router.post("/advisor/tracking")   — tracking issue escalation
-# @router.post("/address/validate")   — address validation
-# @router.post("/dropoff/find")        — find dropoff locations
+class OrchestrationResponse(BaseModel):
+    type: str
+    tool_used: str | None = None
+    answer: str
+    data: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ToolSchema(BaseModel):
+    name: str
+    description: str
+    parameters: list[dict[str, Any]]
+
+
+# ── Endpoints ────────────────────────────────────────────────────────────────
+
+@router.post("/run", response_model=OrchestrationResponse)
+async def run_workflow(
+    body: OrchestrationRequest, request: Request,
+) -> OrchestrationResponse:
+    """Run an orchestration workflow.
+
+    If `tool` is specified, executes that tool directly.
+    Otherwise, auto-selects a tool based on the query text.
+    If no tool matches, returns a direct_answer signal.
+    """
+    registry = getattr(request.app.state, "tool_registry", None)
+    if registry is None:
+        raise AppError(status_code=503, message="Tool registry is not initialized")
+
+    if body.tool:
+        # Explicit tool execution
+        result = await execute_tool(body.tool, body.params, registry)
+    else:
+        # Auto-select tool from query
+        result = await run_orchestration(body.query, body.params, registry)
+
+    return OrchestrationResponse(
+        type=result.type,
+        tool_used=result.tool_used,
+        answer=result.answer,
+        data=result.data,
+        metadata=result.metadata,
+    )
+
+
+@router.get("/tools", response_model=list[ToolSchema])
+async def list_tools(request: Request) -> list[ToolSchema]:
+    """List all registered tools and their schemas."""
+    registry = getattr(request.app.state, "tool_registry", None)
+    if registry is None:
+        raise AppError(status_code=503, message="Tool registry is not initialized")
+
+    return [
+        ToolSchema(**schema)
+        for schema in registry.list_schemas()
+    ]

@@ -15,14 +15,18 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import health, info, orchestration, rag
+from app.api.routes import advisor, health, info, orchestration, rag
 from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import get_logger, setup_logging
 from app.core.middleware import RequestLoggingMiddleware
 from app.llm.client import create_llm_client
+from app.providers.mock_provider import MockShippingProvider
 from app.rag.embeddings import create_embedding_provider
 from app.rag.vector_store import create_vector_store
+from app.tools.address_tools import ValidateAddressTool
+from app.tools.quote_tools import GetQuotePreviewTool
+from app.tools.registry import ToolRegistry
 
 setup_logging()
 logger = get_logger(__name__)
@@ -53,6 +57,17 @@ async def lifespan(app: FastAPI):
     }
     logger.info("RAG pipeline initialized (embedding=%s, llm=%s)",
                 type(embedding_provider).__name__, type(llm_client).__name__)
+
+    # Tool registry and provider
+    shipping_provider = MockShippingProvider()
+    tool_registry = ToolRegistry()
+    tool_registry.register(ValidateAddressTool(shipping_provider))
+    tool_registry.register(GetQuotePreviewTool(shipping_provider))
+    app.state.tool_registry = tool_registry
+    logger.info(
+        "Tool registry initialized: %d tools, provider=%s",
+        tool_registry.count(), shipping_provider.name,
+    )
 
     yield
 
@@ -87,6 +102,7 @@ app.include_router(health.router)
 app.include_router(info.router, prefix="/api/v1")
 app.include_router(orchestration.router, prefix="/api/v1")
 app.include_router(rag.router, prefix="/api/v1")
+app.include_router(advisor.router, prefix="/api/v1")
 
 
 # ── Root ─────────────────────────────────────────────────────────────────────

@@ -53,5 +53,17 @@ export const javaApi = {
 
 export const pythonApi = {
   health: () => `${apiConfig.pythonApiBaseUrl}/health`,
-  orchestration: () => `${apiConfig.pythonApiBaseUrl}/api/v1/orchestration`,
+  advisors: {
+    shipping: () => `${apiConfig.pythonApiBaseUrl}/api/v1/advisor/shipping`,
+    tracking: () => `${apiConfig.pythonApiBaseUrl}/api/v1/advisor/tracking`,
+    recommendation: () => `${apiConfig.pythonApiBaseUrl}/api/v1/advisor/recommendation`,
+  },
+  rag: {
+    query: () => `${apiConfig.pythonApiBaseUrl}/api/v1/rag/query`,
+    ingest: () => `${apiConfig.pythonApiBaseUrl}/api/v1/rag/ingest`,
+  },
+  orchestration: {
+    run: () => `${apiConfig.pythonApiBaseUrl}/api/v1/orchestration/run`,
+    tools: () => `${apiConfig.pythonApiBaseUrl}/api/v1/orchestration/tools`,
+  },
 } as const;

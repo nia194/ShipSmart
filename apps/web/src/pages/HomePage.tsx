@@ -10,6 +10,8 @@ import { Section } from "@/components/shipping/QuoteRow";
 import { PKG_TYPES, HANDLING, getItemErrors, buildBookUrl, type PackageItem, type ShippingService } from "@/lib/shipping-data";
 import { buildSnapshotKey } from "@/hooks/useSavedOptions";
 import { useShippingQuotes } from "@/hooks/useShippingQuotes";
+import { useRecommendation } from "@/hooks/useRecommendation";
+import { RecommendationCard } from "@/components/advisor/RecommendationCard";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -58,6 +60,17 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
   const [openId, setOpenId] = useState<string | null>(null);
 
   const { loading, data, fetchQuotes } = useShippingQuotes();
+
+  // Flatten all quote services for the recommendation hook
+  const allServices = useMemo(() => {
+    if (!data) return null;
+    const services: ShippingService[] = [];
+    if (data.prime) services.push(...(data.prime.top ?? []), ...(data.prime.more ?? []));
+    if (data.private) services.push(...(data.private.top ?? []), ...(data.private.more ?? []));
+    return services.length > 0 ? services : null;
+  }, [data]);
+
+  const { recommendation, loading: recLoading } = useRecommendation(allServices);
 
   const s2 = useRef<HTMLDivElement>(null);
   const s3 = useRef<HTMLDivElement>(null);
@@ -361,6 +374,38 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
                     onSaveService={handleSaveService}
                     origin={origin} dest={dest}
                   />
+                )}
+
+                {/* AI Recommendation Panel */}
+                {recLoading && (
+                  <div style={{ marginTop: 20, padding: "16px 18px", borderRadius: 14, border: "1.5px solid #eeeff1", background: "#f9fafb" }}>
+                    <div className="shim" style={{ width: 200, height: 16, borderRadius: 8, marginBottom: 10 }} />
+                    <div className="shim" style={{ width: "80%", height: 12, borderRadius: 6 }} />
+                  </div>
+                )}
+                {recommendation && !recLoading && (
+                  <div style={{ marginTop: 20, animation: "fadeIn .3s both" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                      <span style={{ fontSize: 16 }}>💡</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "#374151" }}>AI Recommendation</span>
+                    </div>
+                    <RecommendationCard
+                      recommendation={recommendation.primary_recommendation}
+                      isHighlighted={true}
+                    />
+                    {recommendation.alternatives.length > 0 && (
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+                        {recommendation.alternatives.slice(0, 2).map((alt) => (
+                          <RecommendationCard
+                            key={alt.service_name}
+                            recommendation={alt}
+                            isHighlighted={false}
+                          />
+                        ))}
+                      </div>
+                    )}
+                    <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 8 }}>{recommendation.summary}</p>
+                  </div>
                 )}
               </div>
             )}

@@ -55,7 +55,21 @@
       "Bash(python -m uv run pytest -v)",
       "Bash(python -m uv run ruff check app/)",
       "Bash(python -m uv run pytest tests/ -v)",
-      "Bash(python -m uv run ruff check app/ tests/)"
+      "Bash(python -m uv run ruff check app/ tests/)",
+      "Bash(python -m uv run pytest tests/ -v --tb=short)",
+      "Bash(python -m uv run pytest tests/ -q)",
+      "Bash(python -m uv run pytest tests/test_integration_full_flow.py -v --tb=short)",
+      "Bash(python -m ruff check app/)",
+      "Bash(where ruff:*)",
+      "Bash(pip show:*)",
+      "Bash(pip3 show:*)",
+      "Bash(ruff check:*)",
+      "Bash(python -m pytest tests/ -v --tb=short)",
+      "Bash(python -m pytest tests/ --tb=short -q)",
+      "Bash(grep -oP '\"text\":\"[^\"]{100,}\"')",
+      "Bash(python3 -c \" import sys, json for line in sys.stdin: line = line.strip\\(\\) if not line: continue try: obj = json.loads\\(line\\) if obj.get\\('type'\\) == 'assistant' and 'message' in obj: for block in obj['message'].get\\('content', []\\): if isinstance\\(block, dict\\) and block.get\\('type'\\) == 'text': text = block['text'] if 'Phase 13' in text or 'Phase 14' in text or 'phase 13' in text or 'phase 14' in text or 'next' in text.lower\\(\\): print\\(text[:3000]\\) print\\('---END---'\\) except: pass \")",
+      "Bash(python3 -c \" import sys, json for line in sys.stdin: line = line.strip\\(\\) if not line: continue try: obj = json.loads\\(line\\) if obj.get\\('type'\\) in \\('human', 'user'\\) and 'message' in obj: for block in obj['message'].get\\('content', []\\): if isinstance\\(block, dict\\) and block.get\\('type'\\) == 'text': text = block['text'] if 'phase' in text.lower\\(\\) and len\\(text\\) > 200: print\\(text[:5000]\\) print\\('===END MSG==='\\) except: pass \")",
+      "Bash(python -m pytest --co -q)"
     ]
   }
 }

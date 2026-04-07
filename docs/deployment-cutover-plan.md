@@ -38,10 +38,18 @@ backend can be deployed and health-checked independently before any traffic is r
    - `VITE_USE_JAVA_BOOKING_REDIRECT=true` → test booking click tracking
 5. After all three pass, leave all flags at `"true"`
 
-### 3. Deploy api-python (optional)
+### 3. Deploy api-python
 
-The FastAPI service is a skeleton with no active features.
-Deploy only if needed for health check visibility or to prepare for future AI work.
+The FastAPI service provides AI/advisory features: shipping advisor, tracking
+guidance, and quote recommendations. Deploy after Java API is healthy.
+
+1. Set env vars per `docs/production-env-reference.md`
+2. Wait for health check: `GET /health` -> 200
+3. Verify: `POST /api/v1/advisor/recommendation` returns scored results
+4. Frontend recommendation panel should now appear after quotes load
+
+**If Python fails:** Frontend degrades gracefully — recommendation panel
+is hidden and core quote/booking flow continues to work.
 
 ## Feature Flag Cutover Strategy
 
