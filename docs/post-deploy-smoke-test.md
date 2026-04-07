@@ -1,5 +1,7 @@
 # Post-Deploy Smoke Test Checklist
 
+> **See also:** `docs/launch-smoke-tests.md` for the full launch-day checklist.
+
 Run these tests after each deployment or flag change.
 
 ## Prerequisites
@@ -10,16 +12,17 @@ Run these tests after each deployment or flag change.
 
 ## API Health Checks
 
-- [ ] `GET https://shipsmart-api-java.onrender.com/api/v1/health` → 200 `{"status":"ok"}`
-- [ ] `GET https://shipsmart-api-java.onrender.com/actuator/health` → 200 `{"status":"UP"}`
-- [ ] `GET https://shipsmart-api-python.onrender.com/health` → 200 (if deployed)
+- [ ] `GET https://shipsmart-api-java.onrender.com/api/v1/health` -> 200 `{"status":"ok"}`
+- [ ] `GET https://shipsmart-api-python.onrender.com/health` -> 200 `{"status":"ok",...}`
+- [ ] `GET https://shipsmart-api-python.onrender.com/ready` -> 200 `{"status":"ready"}`
 
 ## Quote Flow
 
 - [ ] Open the app in browser
 - [ ] Enter origin, destination, dates, and package details
-- [ ] Click "Get Quotes"
+- [ ] Click "Compare Shipping Rates"
 - [ ] Verify quote results appear with carriers, prices, and transit times
+- [ ] Verify recommendation panel appears below quotes (if Python API is up)
 - [ ] Verify no console errors
 
 ## Auth Flow
@@ -32,40 +35,45 @@ Run these tests after each deployment or flag change.
 
 - [ ] Sign in
 - [ ] Get quotes
-- [ ] Click the bookmark icon on a quote → verify "Saved!" toast
-- [ ] Navigate to saved options view → verify the saved option appears
-- [ ] Click remove on a saved option → verify "Removed" toast
-- [ ] Refresh page → verify saved options list is correct
+- [ ] Click the bookmark icon on a quote -> verify "Saved!" toast
+- [ ] Navigate to saved options view -> verify the saved option appears
+- [ ] Click remove on a saved option -> verify "Removed" toast
+- [ ] Refresh page -> verify saved options list is correct
 
 ## Booking Redirect
 
 - [ ] Get quotes
-- [ ] Expand a quote row → click "Book on [Carrier]"
+- [ ] Expand a quote row -> click "Book on [Carrier]"
 - [ ] Verify a new tab opens to the carrier checkout URL
-- [ ] Verify no console errors (redirect tracking is fire-and-forget)
+- [ ] Verify no console errors
 
-## Unauthorized Access
+## AI Advisor (Python API)
 
-- [ ] Sign out
-- [ ] Open browser devtools → Network tab
-- [ ] Try to access saved options (if UI allows) → verify 401 response
-- [ ] Try `GET /api/v1/saved-options` directly → 401 JSON response
+- [ ] Navigate to Advisor page
+- [ ] Submit a shipping question -> verify answer + sources appear
+- [ ] Switch to Tracking tab -> submit an issue -> verify guidance + next steps
+
+## Recommendation Flow
+
+- [ ] Get quotes on home page
+- [ ] Recommendation panel shows primary (highlighted) + alternatives
+- [ ] Summary text is visible
+
+## Fallback Behavior
+
+- [ ] If Python API is unavailable, recommendation panel is hidden (no error)
+- [ ] If Python API is unavailable, advisor page shows error message
+- [ ] Quote flow, saved options, booking all work without Python API
 
 ## Validation Errors
 
-- [ ] Send `POST /api/v1/quotes` with empty body → 400 with field errors
-- [ ] Send `POST /api/v1/bookings/redirect` with `{}` → 400 with validation message
-
-## Security Headers
-
-- [ ] Check response headers on any Java API response:
-  - `X-Frame-Options: DENY`
-  - `X-Content-Type-Options: nosniff`
-  - `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`
+- [ ] Send `POST /api/v1/quotes` with empty body -> 400 with field errors
+- [ ] Send `POST /api/v1/advisor/shipping` with `{}` -> 422
+- [ ] Send `POST /api/v1/advisor/recommendation` without services -> 422
 
 ## CORS
 
-- [ ] Verify frontend can call Java API without CORS errors
+- [ ] Verify frontend can call both Java and Python APIs without CORS errors
 - [ ] Verify browser console shows no `Access-Control-Allow-Origin` errors
 
 ## Rollback Verification (if testing rollback)

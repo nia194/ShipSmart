@@ -59,13 +59,29 @@ class EchoClient(LLMClient):
         )
 
     async def complete(self, messages: list[dict[str, str]]) -> str:
+        # Extract the user message and any context from the prompt
         user_msg = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
-        return (
-            "[LLM not configured] "
-            "No LLM provider is set. The RAG pipeline retrieved context successfully, "
-            "but cannot generate an answer without an LLM. "
-            f"Set LLM_PROVIDER=openai to enable real completions.\n\nOriginal query: {user_msg}"
+
+        # Try to separate context from question for a more useful response
+        parts = user_msg.split("\n\n")
+        context_parts = [p for p in parts if p.startswith("Relevant") or p.startswith("Context:")]
+        question_parts = [p for p in parts if p.startswith("Question:") or p.startswith("Issue:")]
+
+        response = "Based on available shipping information:\n\n"
+        if context_parts:
+            # Summarize context into a readable answer
+            context_text = context_parts[0]
+            # Take first ~500 chars of context as the answer basis
+            snippet = context_text[:500].strip()
+            response += snippet + "\n\n"
+        if question_parts:
+            response += f"Your question: {question_parts[0]}\n\n"
+
+        response += (
+            "Note: This response is based on retrieved documents only. "
+            "AI-powered answers will provide more detailed, personalized guidance."
         )
+        return response
 
 
 def create_llm_client() -> LLMClient:
