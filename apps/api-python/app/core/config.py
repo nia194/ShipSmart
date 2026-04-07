@@ -24,11 +24,6 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     log_level: str = "INFO"
 
-    # ── Supabase ─────────────────────────────────────────────────────────────
-    supabase_url: str = ""
-    supabase_service_role_key: str = ""
-    supabase_anon_key: str = ""
-
     # ── Internal service-to-service ─────────────────────────────────────────
     internal_java_api_url: str = "http://localhost:8080"
 
@@ -49,6 +44,12 @@ class Settings(BaseSettings):
     # ── Vector store ─────────────────────────────────────────────────────────
     vector_store_type: str = "memory"  # "memory" only for now
     vector_store_path: str = ""
+
+    # ── Providers ────────────────────────────────────────────────────────────
+    shipping_provider: str = "mock"  # "mock" only for now
+
+    # ── Tools ─────────────────────────────────────────────────────────────────
+    enable_tools: bool = True
 
     # ── RAG ───────────────────────────────────────────────────────────────────
     rag_provider: str = ""
