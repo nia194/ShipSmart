@@ -48,7 +48,7 @@ logging:
     root: INFO
     com.shipsmart: DEBUG
   pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] [%X{requestId}] %-5level %logger{36} - %msg%n"
 
 # ── App Config ──────────────────────────────────────────────────────────────
 shipsmart:
@@ -56,30 +56,9 @@ shipsmart:
     url: ${SUPABASE_URL:}
     service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
     jwt-secret: ${SUPABASE_JWT_SECRET:}
+  security:
+    require-jwt-secret: ${REQUIRE_JWT_SECRET:false}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
   python-api:
     base-url: ${INTERNAL_PYTHON_API_URL:http://localhost:8000}
-
----
-# ── Local profile overrides ─────────────────────────────────────────────────
-# Requires DATABASE_URL pointing to Supabase Postgres (or local Postgres).
-# If no DATABASE_URL is set, the app will fail to start — this is intentional.
-spring:
-  config:
-    activate:
-      on-profile: local
-logging:
-  level:
-    com.shipsmart: DEBUG
-
----
-# ── Production profile (Render) ──────────────────────────────────────────────
-spring:
-  config:
-    activate:
-      on-profile: production
-logging:
-  level:
-    root: WARN
-    com.shipsmart: INFO
