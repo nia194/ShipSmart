@@ -15,6 +15,10 @@ dependencies = [
     # ── HTTP client (for calling Java API or external services) ───────────
     "httpx>=0.28.0",
 
+    # ── AI / RAG ──────────────────────────────────────────────────────────
+    "numpy>=2.0.0",
+    "openai>=1.60.0",
+
     # ── Supabase (optional — for direct DB access if needed) ──────────────
     # TODO: Uncomment if FastAPI needs direct Supabase access.
     # Primary DB access should be via the Java API to preserve service boundaries.

@@ -20,9 +20,7 @@ public class AppConfig {
      * CORS configuration.
      * Allowed origins come from the CORS_ALLOWED_ORIGINS environment variable
      * (comma-separated). Add your Render frontend URL in production.
-     *
-     * TODO: Tighten this down when auth is implemented — restrict methods/headers
-     * to only what the frontend actually uses.
+     * Wired into Spring Security via SecurityConfig.
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
