@@ -11,6 +11,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 from app.core.errors import AppError
+from app.llm.router import TASK_REASONING, TASK_SYNTHESIS, LLMRouter
 from app.schemas.advisor import (
     RecommendationRequest,
     RecommendationResponse,
@@ -39,6 +40,7 @@ async def shipping_advisor(
     """
     rag = getattr(request.app.state, "rag", None)
     tool_registry = getattr(request.app.state, "tool_registry", None)
+    llm_router: LLMRouter | None = getattr(request.app.state, "llm_router", None)
 
     if rag is None or tool_registry is None:
         raise AppError(
@@ -46,12 +48,17 @@ async def shipping_advisor(
             message="RAG pipeline or tool registry not initialized",
         )
 
+    # Shipping advisor reasons over context + tool results → reasoning task
+    reasoning_client = (
+        llm_router.for_task(TASK_REASONING) if llm_router else rag["llm_client"]
+    )
+
     advice = await get_shipping_advice(
         query=body.query,
         context=body.context,
         embedding_provider=rag["embedding_provider"],
         vector_store=rag["vector_store"],
-        llm_client=rag["llm_client"],
+        llm_client=reasoning_client,
         tool_registry=tool_registry,
     )
 
@@ -76,6 +83,7 @@ async def tracking_advisor(
     """
     rag = getattr(request.app.state, "rag", None)
     tool_registry = getattr(request.app.state, "tool_registry", None)
+    llm_router: LLMRouter | None = getattr(request.app.state, "llm_router", None)
 
     if rag is None or tool_registry is None:
         raise AppError(
@@ -83,12 +91,16 @@ async def tracking_advisor(
             message="RAG pipeline or tool registry not initialized",
         )
 
+    reasoning_client = (
+        llm_router.for_task(TASK_REASONING) if llm_router else rag["llm_client"]
+    )
+
     guidance = await get_tracking_guidance(
         issue=body.issue,
         context=body.context,
         embedding_provider=rag["embedding_provider"],
         vector_store=rag["vector_store"],
-        llm_client=rag["llm_client"],
+        llm_client=reasoning_client,
         tool_registry=tool_registry,
     )
 
@@ -112,8 +124,14 @@ async def get_recommendation(
     Takes a list of services and returns scored recommendations with explanations.
     Deterministic scoring — does not require LLM or RAG.
     """
+    # Recommendation summary is light synthesis over scored options.
+    llm_router: LLMRouter | None = getattr(request.app.state, "llm_router", None)
     rag = getattr(request.app.state, "rag", None)
-    llm_client = rag["llm_client"] if rag else None
+    llm_client = (
+        llm_router.for_task(TASK_SYNTHESIS)
+        if llm_router
+        else (rag["llm_client"] if rag else None)
+    )
 
     recommendations = await generate_recommendations(
         services=body.services,
