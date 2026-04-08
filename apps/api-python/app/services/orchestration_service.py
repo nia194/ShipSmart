@@ -14,11 +14,17 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.cache import TTLCache
 from app.core.errors import AppError
+from app.llm.client import LLMClient
 from app.tools.base import ToolInput, ToolOutput
 from app.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+# Small cache for LLM-assisted tool selection so repeated identical queries
+# don't pay the LLM cost twice.
+_tool_selection_cache = TTLCache(default_ttl=600, max_size=128)
 
 # Keyword patterns for rule-based tool selection.
 # Each entry: (compiled regex, tool_name, param_extractor or None)
@@ -53,10 +59,72 @@ def select_tool(query: str, registry: ToolRegistry) -> str | None:
     return None
 
 
+async def select_tool_with_llm(
+    query: str,
+    registry: ToolRegistry,
+    llm_client: LLMClient | None,
+) -> str | None:
+    """LLM-assisted tool selection used when the regex shortcut misses.
+
+    Issues a tightly constrained prompt: the LLM must reply with EXACTLY one
+    tool name from the registry, or the literal string 'NONE'. Anything else
+    is treated as no-match. Cached by query string for cost control.
+    """
+    if llm_client is None:
+        return None
+
+    available = [s["name"] for s in registry.list_schemas()]
+    if not available:
+        return None
+
+    cache_key = _tool_selection_cache.make_key("tool-select", query, tuple(sorted(available)))
+    cached = _tool_selection_cache.get(cache_key)
+    if cached is not None:
+        return cached if cached != "__NONE__" else None
+
+    tool_list = ", ".join(available)
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a strict tool dispatcher for a shipping assistant. "
+                "Reply with EXACTLY one tool name from the provided list, or the "
+                "literal word NONE if no tool fits. No explanation, no punctuation, "
+                "no other text."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"User query: {query}\n"
+                f"Available tools: {tool_list}\n"
+                "Which tool should be invoked? Reply with one of: "
+                f"{tool_list}, NONE."
+            ),
+        },
+    ]
+
+    try:
+        raw = await llm_client.complete(messages)
+    except Exception as exc:
+        logger.warning("LLM tool selection failed: %s", exc)
+        return None
+
+    candidate = (raw or "").strip().splitlines()[0].strip().strip(".:,")
+    if candidate.upper() == "NONE" or candidate not in available:
+        _tool_selection_cache.set(cache_key, "__NONE__")
+        return None
+
+    _tool_selection_cache.set(cache_key, candidate)
+    logger.info("LLM-assisted tool selection chose: %s", candidate)
+    return candidate
+
+
 async def run_orchestration(
     query: str,
     params: dict[str, Any],
     registry: ToolRegistry,
+    llm_client: LLMClient | None = None,
 ) -> OrchestrationResult:
     """Execute the orchestration flow for a query.
 
@@ -73,16 +141,28 @@ async def run_orchestration(
     Returns:
         OrchestrationResult with either tool output or direct-answer signal.
     """
+    # Fast path: deterministic regex rules.
     tool_name = select_tool(query, registry)
+
+    # Slow path: LLM-assisted selection when the regex misses and a client
+    # is available. Keeps cost low because the LLM is only called for the
+    # natural-language edge cases the rules can't catch.
+    selection_method = "rule"
+    if tool_name is None and llm_client is not None:
+        tool_name = await select_tool_with_llm(query, registry, llm_client)
+        if tool_name is not None:
+            selection_method = "llm"
 
     if tool_name is None:
         return OrchestrationResult(
             type="direct_answer",
             answer="No tool matched this query. Use the RAG endpoint for general questions.",
-            metadata={"reason": "no_tool_match"},
+            metadata={"reason": "no_tool_match", "selection_method": "none"},
         )
 
-    return await execute_tool(tool_name, params, registry)
+    result = await execute_tool(tool_name, params, registry)
+    result.metadata = {**result.metadata, "selection_method": selection_method}
+    return result
 
 
 async def execute_tool(

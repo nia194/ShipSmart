@@ -109,7 +109,18 @@ class InMemoryVectorStore(VectorStore):
 
 
 def create_vector_store() -> VectorStore:
-    """Factory: create the configured vector store."""
-    # Only in-memory is supported for now.
-    # Future: add "pgvector", "pinecone", "chromadb", etc.
+    """Factory: create the configured vector store.
+
+    Supported backends:
+      - "memory" (default): InMemoryVectorStore — fast, non-persistent.
+      - "pgvector": PGVectorStore — Postgres + pgvector extension.
+        Requires DATABASE_URL to be set. Caller must `await store.connect()`
+        during startup.
+    """
+    from app.core.config import settings  # local import to avoid cycles
+
+    backend = (settings.vector_store_type or "memory").lower().strip()
+    if backend == "pgvector":
+        from app.rag.pgvector_store import PGVectorStore
+        return PGVectorStore(dsn=settings.database_url, table=settings.pgvector_table)
     return InMemoryVectorStore()

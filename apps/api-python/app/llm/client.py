@@ -4,6 +4,7 @@ Multi-provider support with config-driven selection and graceful fallback.
 
 Supported providers:
   - openai: OpenAI Chat Completions API (GPT-4o, GPT-4o-mini, etc.)
+  - anthropic: Anthropic Messages API (Claude Sonnet, etc.)
   - gemini: Google Gemini API (Gemini 2.0 Flash, etc.)
   - llama: Local Llama via Ollama (OpenAI-compatible endpoint)
   - "" (empty): EchoClient placeholder (no external calls)
@@ -195,6 +196,78 @@ def _messages_to_gemini_contents(messages: list[dict[str, str]]) -> list[dict]:
     return contents
 
 
+# ── Anthropic / Claude ───────────────────────────────────────────────────────
+
+
+class AnthropicClient(LLMClient):
+    """Anthropic Messages API client.
+
+    Uses the official `anthropic` SDK's AsyncAnthropic. Converts the
+    OpenAI-style chat messages list into Anthropic's `system=` + `messages=`
+    shape (Anthropic does not accept a 'system' role inside messages).
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "claude-sonnet-4-5",
+        timeout: int = 30,
+        max_tokens: int = 1024,
+        temperature: float = 0.3,
+    ):
+        from anthropic import AsyncAnthropic
+
+        self._client = AsyncAnthropic(api_key=api_key, timeout=timeout, max_retries=2)
+        self._model = model
+        self._max_tokens = max_tokens
+        self._temperature = temperature
+        logger.info("AnthropicClient initialized (model=%s, timeout=%ds)", model, timeout)
+
+    @property
+    def provider_name(self) -> str:
+        return "anthropic"
+
+    async def complete(self, messages: list[dict[str, str]]) -> str:
+        try:
+            system_parts: list[str] = []
+            chat_messages: list[dict[str, str]] = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    if content:
+                        system_parts.append(content)
+                    continue
+                # Anthropic expects 'user' or 'assistant'
+                anth_role = "assistant" if role == "assistant" else "user"
+                chat_messages.append({"role": anth_role, "content": content})
+
+            if not chat_messages:
+                # Anthropic requires at least one user message
+                chat_messages = [{"role": "user", "content": "(no user message)"}]
+
+            response = await self._client.messages.create(
+                model=self._model,
+                max_tokens=self._max_tokens,
+                temperature=self._temperature,
+                system="\n\n".join(system_parts) if system_parts else None,
+                messages=chat_messages,
+            )
+
+            # Concatenate any text blocks in the response
+            parts: list[str] = []
+            for block in getattr(response, "content", []) or []:
+                text = getattr(block, "text", None)
+                if text:
+                    parts.append(text)
+            return "".join(parts)
+        except Exception as e:
+            logger.error("Anthropic API error: %s", e)
+            raise AppError(
+                status_code=502, message="Anthropic API returned an error"
+            ) from e
+
+
 # ── Llama (via Ollama) ───────────────────────────────────────────────────────
 
 
@@ -343,6 +416,19 @@ def build_provider_client(provider: str) -> LLMClient | None:
                 max_tokens=settings.llm_max_tokens,
                 temperature=settings.llm_temperature,
             )
+        if provider == "anthropic":
+            if not settings.anthropic_api_key:
+                logger.warning(
+                    "Provider 'anthropic' requested but ANTHROPIC_API_KEY is not set"
+                )
+                return None
+            return AnthropicClient(
+                api_key=settings.anthropic_api_key,
+                model=settings.anthropic_model,
+                timeout=settings.llm_timeout,
+                max_tokens=settings.llm_max_tokens,
+                temperature=settings.llm_temperature,
+            )
         if provider == "llama":
             return LlamaClient(
                 base_url=settings.llama_base_url,
@@ -395,6 +481,21 @@ def create_llm_client() -> LLMClient:
             return GeminiClient(
                 api_key=settings.gemini_api_key,
                 model=settings.gemini_model,
+                timeout=settings.llm_timeout,
+                max_tokens=settings.llm_max_tokens,
+                temperature=settings.llm_temperature,
+            )
+
+        if provider == "anthropic":
+            if not settings.anthropic_api_key:
+                logger.warning(
+                    "LLM_PROVIDER=anthropic but ANTHROPIC_API_KEY is not set — "
+                    "falling back to EchoClient"
+                )
+                return EchoClient()
+            return AnthropicClient(
+                api_key=settings.anthropic_api_key,
+                model=settings.anthropic_model,
                 timeout=settings.llm_timeout,
                 max_tokens=settings.llm_max_tokens,
                 temperature=settings.llm_temperature,

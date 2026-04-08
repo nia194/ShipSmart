@@ -13,7 +13,10 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
 from app.core.errors import AppError
+from app.core.rate_limit import limiter
+from app.llm.router import TASK_REASONING, LLMRouter
 from app.services.orchestration_service import (
     execute_tool,
     run_orchestration,
@@ -53,25 +56,33 @@ class ToolSchema(BaseModel):
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @router.post("/run", response_model=OrchestrationResponse)
+@limiter.limit(settings.rate_limit_orchestration)
 async def run_workflow(
     body: OrchestrationRequest, request: Request,
 ) -> OrchestrationResponse:
     """Run an orchestration workflow.
 
     If `tool` is specified, executes that tool directly.
-    Otherwise, auto-selects a tool based on the query text.
-    If no tool matches, returns a direct_answer signal.
+    Otherwise, auto-selects a tool based on the query text. Selection uses
+    deterministic regex rules first; if those miss and a reasoning LLM is
+    configured, it falls back to LLM-assisted selection.
+    If no tool matches at all, returns a direct_answer signal.
     """
     registry = getattr(request.app.state, "tool_registry", None)
     if registry is None:
         raise AppError(status_code=503, message="Tool registry is not initialized")
 
+    llm_router: LLMRouter | None = getattr(request.app.state, "llm_router", None)
+    reasoning_client = llm_router.for_task(TASK_REASONING) if llm_router else None
+
     if body.tool:
         # Explicit tool execution
         result = await execute_tool(body.tool, body.params, registry)
     else:
-        # Auto-select tool from query
-        result = await run_orchestration(body.query, body.params, registry)
+        # Auto-select tool from query (regex → LLM fallback)
+        result = await run_orchestration(
+            body.query, body.params, registry, llm_client=reasoning_client,
+        )
 
     return OrchestrationResponse(
         type=result.type,
