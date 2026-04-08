@@ -1,0 +1,1 @@
+- [No DevOps tooling](feedback_no_devops.md) -- User does not want CI/CD, Jenkins, Grafana, or monitoring infra suggested

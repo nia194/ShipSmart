@@ -20,8 +20,8 @@ from app.core.config import settings
 from app.core.errors import register_error_handlers
 from app.core.logging import get_logger, setup_logging
 from app.core.middleware import RequestLoggingMiddleware
-from app.llm.client import create_llm_client
-from app.providers.mock_provider import MockShippingProvider
+from app.llm.router import TASK_SYNTHESIS, create_llm_router
+from app.providers import create_shipping_provider
 from app.rag.embeddings import create_embedding_provider
 from app.rag.vector_store import create_vector_store
 from app.tools.address_tools import ValidateAddressTool
@@ -46,20 +46,24 @@ async def lifespan(app: FastAPI):
         timeout=30.0,
     )
 
-    # RAG pipeline components
+    # RAG pipeline components + task-based LLM router
     embedding_provider = create_embedding_provider()
     vector_store = create_vector_store()
-    llm_client = create_llm_client()
+    llm_router = create_llm_router()
+    app.state.llm_router = llm_router
+    # Back-compat: existing callers still read rag["llm_client"]. Point it
+    # at the synthesis client (RAG q&a is the historical use of this slot).
     app.state.rag = {
         "embedding_provider": embedding_provider,
         "vector_store": vector_store,
-        "llm_client": llm_client,
+        "llm_client": llm_router.for_task(TASK_SYNTHESIS),
     }
-    logger.info("RAG pipeline initialized (embedding=%s, llm=%s)",
-                type(embedding_provider).__name__, type(llm_client).__name__)
+    logger.info("LLM router initialized: %s", llm_router.describe())
+    logger.info("RAG pipeline initialized (embedding=%s)",
+                type(embedding_provider).__name__)
 
-    # Tool registry and provider
-    shipping_provider = MockShippingProvider()
+    # Tool registry and provider (factory reads SHIPPING_PROVIDER from config)
+    shipping_provider = create_shipping_provider()
     tool_registry = ToolRegistry()
     tool_registry.register(ValidateAddressTool(shipping_provider))
     tool_registry.register(GetQuotePreviewTool(shipping_provider))

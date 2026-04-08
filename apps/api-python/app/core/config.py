@@ -31,10 +31,32 @@ class Settings(BaseSettings):
     cors_allowed_origins: str = "http://localhost:5173"
 
     # ── LLM ──────────────────────────────────────────────────────────────────
-    llm_provider: str = ""  # "openai" or "" (empty = not configured)
+    # Legacy single-provider selector. Kept for back-compat — task-based
+    # routing below takes precedence when set.
+    llm_provider: str = ""  # "openai", "gemini", "llama", "" (empty = EchoClient)
+    llm_timeout: int = 30  # seconds
+    llm_max_tokens: int = 1024
+    llm_temperature: float = 0.3
+
+    # ── Task-based LLM routing ──────────────────────────────────────────────
+    # Each task picks an underlying provider. Empty string = inherit
+    # llm_provider (legacy behaviour). Unknown / missing-key providers
+    # fall through to LLM_PROVIDER_FALLBACK, then to EchoClient.
+    llm_provider_reasoning: str = ""   # advisors (shipping, tracking)
+    llm_provider_synthesis: str = ""   # RAG q&a, recommendation summary
+    llm_provider_fallback: str = "echo"  # safety net
+
+    # ── OpenAI ───────────────────────────────────────────────────────────────
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
-    anthropic_api_key: str = ""
+
+    # ── Google Gemini ────────────────────────────────────────────────────────
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.0-flash"
+
+    # ── Llama (local / Ollama) ───────────────────────────────────────────────
+    llama_base_url: str = "http://localhost:11434"
+    llama_model: str = "llama3.2"
 
     # ── Embeddings ───────────────────────────────────────────────────────────
     embedding_provider: str = ""  # "openai" or "" (empty = local placeholder)
@@ -46,7 +68,30 @@ class Settings(BaseSettings):
     vector_store_path: str = ""
 
     # ── Providers ────────────────────────────────────────────────────────────
-    shipping_provider: str = "mock"  # "mock" only for now
+    shipping_provider: str = "mock"  # "mock", "ups", "fedex", "dhl", "usps"
+
+    # ── UPS ──────────────────────────────────────────────────────────────────
+    ups_client_id: str = ""
+    ups_client_secret: str = ""
+    ups_account_number: str = ""
+    ups_base_url: str = "https://onlinetools.ups.com"
+
+    # ── FedEx ────────────────────────────────────────────────────────────────
+    fedex_client_id: str = ""
+    fedex_client_secret: str = ""
+    fedex_account_number: str = ""
+    fedex_base_url: str = "https://apis.fedex.com"
+
+    # ── DHL ──────────────────────────────────────────────────────────────────
+    dhl_api_key: str = ""
+    dhl_api_secret: str = ""
+    dhl_account_number: str = ""
+    dhl_base_url: str = "https://express.api.dhl.com"
+
+    # ── USPS ─────────────────────────────────────────────────────────────────
+    usps_client_id: str = ""
+    usps_client_secret: str = ""
+    usps_base_url: str = "https://api.usps.com"
 
     # ── Tools ─────────────────────────────────────────────────────────────────
     enable_tools: bool = True
