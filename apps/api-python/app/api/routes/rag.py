@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.core.errors import AppError
+from app.llm.router import TASK_SYNTHESIS, LLMRouter
 from app.rag.ingestion import ingest_documents, load_documents
 from app.services.rag_service import rag_query
 
@@ -49,11 +50,16 @@ async def query_rag(body: RAGQueryRequest, request: Request) -> RAGQueryResponse
     if rag is None:
         raise AppError(status_code=503, message="RAG pipeline is not initialized")
 
+    llm_router: LLMRouter | None = getattr(request.app.state, "llm_router", None)
+    synth_client = (
+        llm_router.for_task(TASK_SYNTHESIS) if llm_router else rag["llm_client"]
+    )
+
     result = await rag_query(
         query=body.query,
         embedding_provider=rag["embedding_provider"],
         vector_store=rag["vector_store"],
-        llm_client=rag["llm_client"],
+        llm_client=synth_client,
         top_k=settings.rag_top_k,
     )
 

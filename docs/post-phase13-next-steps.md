@@ -14,9 +14,7 @@ Phase 13 (post-launch stabilization) is complete. The system is deployed on Rend
 
 ---
 
-## Recommended Phase 14: "Go Real + CI Safety Net"
-
-Three independent workstreams that can be done in parallel:
+## Recommended Phase 14: "Go Real"
 
 ### 14A: Enable Real AI (Config Only -- No Code Changes)
 
@@ -36,19 +34,7 @@ Three independent workstreams that can be done in parallel:
 
 **Risk:** Low. EchoClient/LocalHash remain as fallback (revert env vars).
 
-### 14B: CI/CD Pipeline (GitHub Actions)
-
-**What to build:**
-1. Python workflow: `pytest` + `ruff check` on PR to main
-2. Java workflow: `./gradlew test` on PR to main
-3. Frontend workflow: `pnpm build` + `pnpm typecheck` on PR to main
-4. (Optional) Auto-deploy trigger on merge to main
-
-**Impact:** Catch regressions before they reach production. Currently all testing is manual.
-
-**Risk:** None. Additive infrastructure.
-
-### 14C: Expand Knowledge Base
+### 14B: Expand Knowledge Base
 
 **What to do:**
 1. Add documents to `apps/api-python/data/documents/`:
@@ -65,24 +51,21 @@ Three independent workstreams that can be done in parallel:
 
 ---
 
-## Recommended Phase 15: "Protect" (After Real AI Is Live)
+## Recommended Phase 15: "Protect"
 
 ### 15A: Rate Limiting
 
-**Why now:** With real OpenAI calls, each advisor request costs money.
+**Why:** With real OpenAI calls, each advisor request costs money.
 
 **Options:**
 - `slowapi` (built on limits library) for FastAPI
 - Per-IP or per-endpoint limits
 - Suggested: 10 req/min for advisor endpoints, 30 req/min for recommendations
 
-### 15B: Monitoring & Observability
+### 15B: Auth on Python API
 
-**What to add:**
-- Structured JSON logging (replace text format)
-- Log drain to external service (Datadog, Logtail, Betterstack)
-- Basic metrics: request count, latency percentiles, error rate
-- Alerting on error rate spikes
+- Require auth for advisor endpoints
+- API key or JWT validation
 
 ---
 
@@ -96,15 +79,23 @@ Three independent workstreams that can be done in parallel:
 - Map carrier API response to existing `QuotePreviewInput`/output format
 - Configure via `SHIPPING_PROVIDER=real`
 
-**Note:** This affects the Python API tools (GetQuotePreviewTool). Java API quote generation is a separate system with its own mock rates.
-
 ### 16B: Multi-Turn Advisor Conversations
 
 **What to build:**
 - Conversation history state on advisor page
 - Send previous messages as context to advisor endpoint
 - `conversation_id` in request/response
-- Optional server-side persistence
+
+### 16C: LLM-Driven Tool Selection
+
+- Replace regex-based tool matching with LLM intent detection
+- Support multi-tool execution
+- Fallback to regex if LLM unavailable
+
+### 16D: Persistent Vector Store
+
+- Replace InMemoryVectorStore with Chroma, Qdrant, or file-based persistence
+- Faster startup, no re-ingestion on restart
 
 ---
 
@@ -112,8 +103,6 @@ Three independent workstreams that can be done in parallel:
 
 | Item | Why Wait |
 |------|----------|
-| LLM-driven tool selection | Requires real LLM to be enabled and stable first |
-| Persistent vector store | Overkill for 2-3 documents; only needed when corpus grows significantly |
 | Decommission Supabase edge functions | Need 2+ weeks stable on Java API first |
 | Java-to-Python service calls | No current use case; frontend orchestration works |
 | ShipmentController implementation | No UI consumes it; prioritize user-facing features |
@@ -151,10 +140,8 @@ Three independent workstreams that can be done in parallel:
 
 ---
 
-## Open Questions for the Team
+## Open Questions
 
 1. **OpenAI API key:** Is one available? Enabling real AI is the single highest-impact next step.
-2. **CI/CD preferences:** GitHub Actions (recommended) or another CI system?
-3. **Monitoring tool:** Any existing preference (Datadog, Betterstack, etc.)?
-4. **Carrier API accounts:** Are any carrier developer accounts available for real rate integration?
-5. **Timeline for Supabase edge function decommission:** When is the team comfortable removing the legacy fallback path?
+2. **Carrier API accounts:** Are any carrier developer accounts available for real rate integration?
+3. **Timeline for Supabase edge function decommission:** When is the team comfortable removing the legacy fallback path?
