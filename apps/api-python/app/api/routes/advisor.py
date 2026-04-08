@@ -8,9 +8,11 @@ to provide structured, debuggable AI-assisted features.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Header, Request
 
+from app.core.config import settings
 from app.core.errors import AppError
+from app.core.rate_limit import limiter
 from app.llm.router import TASK_REASONING, TASK_SYNTHESIS, LLMRouter
 from app.schemas.advisor import (
     RecommendationRequest,
@@ -21,6 +23,7 @@ from app.schemas.advisor import (
     TrackingAdvisorRequest,
     TrackingAdvisorResponse,
 )
+from app.services.java_client import JavaApiClient
 from app.services.recommendation_service import generate_recommendations
 from app.services.shipping_advisor_service import get_shipping_advice
 from app.services.tracking_advisor_service import get_tracking_guidance
@@ -28,9 +31,18 @@ from app.services.tracking_advisor_service import get_tracking_guidance
 router = APIRouter(prefix="/advisor", tags=["advisor"])
 
 
+def _bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    if authorization.lower().startswith("bearer "):
+        return authorization.split(" ", 1)[1].strip() or None
+    return authorization.strip() or None
+
+
 # ── Shipping Advisor ─────────────────────────────────────────────────────────
 
 @router.post("/shipping", response_model=ShippingAdvisorResponse)
+@limiter.limit(settings.rate_limit_advisor)
 async def shipping_advisor(
     body: ShippingAdvisorRequest, request: Request,
 ) -> ShippingAdvisorResponse:
@@ -74,6 +86,7 @@ async def shipping_advisor(
 # ── Tracking Advisor ────────────────────────────────────────────────────────
 
 @router.post("/tracking", response_model=TrackingAdvisorResponse)
+@limiter.limit(settings.rate_limit_advisor)
 async def tracking_advisor(
     body: TrackingAdvisorRequest, request: Request,
 ) -> TrackingAdvisorResponse:
@@ -116,13 +129,17 @@ async def tracking_advisor(
 # ── Recommendations ──────────────────────────────────────────────────────────
 
 @router.post("/recommendation", response_model=RecommendationResponse)
+@limiter.limit(settings.rate_limit_advisor)
 async def get_recommendation(
-    body: RecommendationRequest, request: Request,
+    body: RecommendationRequest,
+    request: Request,
+    authorization: str | None = Header(default=None),
 ) -> RecommendationResponse:
     """Get ranked service recommendations from quote preview results.
 
     Takes a list of services and returns scored recommendations with explanations.
-    Deterministic scoring — does not require LLM or RAG.
+    If `services` is empty but `context.shipment_request_id` is provided, the
+    list is hydrated from the Java API (Authorization header is forwarded).
     """
     # Recommendation summary is light synthesis over scored options.
     llm_router: LLMRouter | None = getattr(request.app.state, "llm_router", None)
@@ -133,10 +150,15 @@ async def get_recommendation(
         else (rag["llm_client"] if rag else None)
     )
 
+    http_client = getattr(request.app.state, "http_client", None)
+    java_client = JavaApiClient(http_client) if http_client is not None else None
+
     recommendations = await generate_recommendations(
         services=body.services,
         context=body.context,
         llm_client=llm_client,
+        java_client=java_client,
+        auth_token=_bearer_token(authorization),
     )
 
     return RecommendationResponse(

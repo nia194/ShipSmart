@@ -64,8 +64,19 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 256
 
     # ── Vector store ─────────────────────────────────────────────────────────
-    vector_store_type: str = "memory"  # "memory" only for now
+    vector_store_type: str = "memory"  # "memory" or "pgvector"
     vector_store_path: str = ""
+    database_url: str = ""              # Postgres connection string for pgvector
+    pgvector_table: str = "rag_chunks"  # table name used by PGVectorStore
+    rag_auto_ingest: bool = True        # auto-ingest at startup if store is empty
+
+    # ── Anthropic / Claude ───────────────────────────────────────────────────
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-5"
+
+    # ── Rate limiting ────────────────────────────────────────────────────────
+    rate_limit_advisor: str = "10/minute"
+    rate_limit_orchestration: str = "20/minute"
 
     # ── Providers ────────────────────────────────────────────────────────────
     shipping_provider: str = "mock"  # "mock", "ups", "fedex", "dhl", "usps"

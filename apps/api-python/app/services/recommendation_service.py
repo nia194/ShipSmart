@@ -16,6 +16,7 @@ from enum import StrEnum
 
 from app.core.cache import recommendation_cache
 from app.llm.client import LLMClient
+from app.services.java_client import JavaApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,8 @@ async def generate_recommendations(
     services: list[dict],
     context: dict | None = None,
     llm_client: LLMClient | None = None,
+    java_client: JavaApiClient | None = None,
+    auth_token: str | None = None,
 ) -> QuoteRecommendations:
     """Generate ranked recommendations from quote preview services.
 
@@ -62,11 +65,28 @@ async def generate_recommendations(
         services: List of service dicts with service, price_usd, estimated_days.
         context: Optional context (weight, fragility, urgency, etc.)
         llm_client: For LLM-generated explanations.
+        java_client: Optional Java API client. If `services` is empty AND
+            `context` carries `shipment_request_id`, the recommendations
+            will be hydrated from the Java side.
+        auth_token: Optional JWT forwarded to Java when fetching quotes.
 
     Returns:
         QuoteRecommendations with primary recommendation and alternatives.
     """
-    # Check cache
+    # If services not supplied, try to hydrate from Java by shipment_request_id.
+    if not services and context and java_client and context.get("shipment_request_id"):
+        fetched = await java_client.get_quotes(
+            shipment_request_id=str(context["shipment_request_id"]),
+            auth_token=auth_token,
+        )
+        if fetched:
+            services = fetched
+            logger.info(
+                "Hydrated %d services from Java for shipment_request_id=%s",
+                len(services), context.get("shipment_request_id"),
+            )
+
+    # Check cache (key includes both services and context for correctness)
     cache_key = recommendation_cache.make_key(services, context)
     cached = recommendation_cache.get(cache_key)
     if cached is not None:
