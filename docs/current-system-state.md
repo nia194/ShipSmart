@@ -1,151 +1,126 @@
 # Current System State
 
-Reconstructed from actual repository contents on 2026-04-06.
-Branch: `feature/1.3` (ahead of `main` by 1 commit: `607c80f Phase3-7 completed`).
+As of 2026-04-07. Verified against actual codebase on `develop` branch.
 
 ---
 
-## Services Overview
+## Architecture
 
-| Service | Tech | Status | Health Endpoint |
-|---------|------|--------|-----------------|
-| **shipsmart-web** | React 19 + Vite + Tailwind | Deployed (Render static site) | Root URL loads |
-| **shipsmart-api-java** | Spring Boot 3.4.4 + PostgreSQL | Deployed (Render web service) | `GET /api/v1/health` |
-| **shipsmart-api-python** | FastAPI 0.135.3 + uvicorn | Deployed (Render web service) | `GET /health` |
-| **Supabase** | Auth + PostgreSQL | Active | N/A (managed) |
+3-service polyglot monorepo managed by Nx 22.3 + pnpm workspaces.
 
----
+| Service | Stack | Responsibility | Deploy |
+|---------|-------|---------------|--------|
+| Frontend (`apps/web`) | React 19 + Vite + TypeScript + shadcn/ui + Tailwind | UI: quote form, saved options, advisor page, booking redirect | Render Static Site |
+| Java API (`apps/api-java`) | Spring Boot 4.0.5 (Java 25) | Transactional data: quotes, saved options, booking redirects. Supabase PostgreSQL + JWT auth | Render |
+| Python API (`apps/api-python`) | FastAPI 0.135.3 (Python 3.13) | AI features: RAG pipeline, LLM integration, tool orchestration, advisor endpoints, recommendations | Render |
 
-## Component Status Matrix
+Supporting: Supabase (PostgreSQL + Auth), legacy edge functions (feature-flagged, fallback only).
 
-### Frontend (apps/web)
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Quote search form (3-step) | **Complete** | Origin/dest, dates, packages with validation |
-| Quote results display | **Complete** | Prime + Private provider sections, expandable rows |
-| Auth (login/signup) | **Complete** | Supabase Auth via `useAuth()` context |
-| Saved options CRUD | **Complete** | Feature-flagged: Java API or Supabase edge functions |
-| Booking redirect tracking | **Complete** | Feature-flagged: Java API or Supabase edge functions |
-| Advisor page (shipping + tracking) | **Complete** | Calls Python FastAPI `/api/v1/advisor/*` |
-| AI recommendation panel | **Complete** | Non-blocking; fails silently if Python API down |
-| Feature flags (`VITE_USE_JAVA_*`) | **Active** | All set to `"true"` in Render production |
-| Supabase edge function fallback | **Available** | Can revert flags to `"false"` to use legacy path |
-| Dark mode | **Not implemented** | |
-| Notification backend | **Not implemented** | SavedPage has local-only notification UI |
-
-**Pages:** HomePage, SavedPage, AuthPage, AdvisorPage, NotFound (5 total)
-
-### Spring Boot Java API (apps/api-java)
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| `POST /api/v1/quotes` | **Complete** | Mock deterministic quotes, persists ShipmentRequest |
-| `GET/POST/DELETE /api/v1/saved-options` | **Complete** | JWT-authenticated, user-scoped |
-| `POST /api/v1/bookings/redirect` | **Complete** | Public, persists RedirectTracking |
-| `GET /api/v1/health` | **Complete** | Used by Render health checks |
-| `/actuator/health` | **Complete** | Spring Actuator |
-| `GET/POST /api/v1/shipments` | **Stub only** | Controllers exist, services are TODO |
-| JWT auth (Supabase) | **Complete** | HMAC-SHA verification, fallback unsigned decode for dev |
-| Spring Security | **Complete** | Stateless, CSRF disabled, endpoint authorization |
-| Global error handling | **Complete** | Structured JSON error responses |
-| Request logging (MDC) | **Complete** | requestId in every log line |
-| WebClient for Python API calls | **Not implemented** | TODO comment in AppConfig.java:42-46 |
-| Rate limiting | **Not implemented** | |
-| Real carrier API integration | **Not implemented** | All quotes are mock/hardcoded |
-
-**Database tables:** `shipment_requests`, `saved_options`, `redirect_tracking` (+ Supabase-managed `profiles`, `user_roles`)
-**Tests:** 28 JUnit 5 tests (7 QuoteService, 6 SavedOptionService, 4 BookingService, 3 BookingController, 5 SavedOptionController, 1 context smoke, 2 other)
-
-### FastAPI Python API (apps/api-python)
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| RAG pipeline (chunk, embed, store, retrieve) | **Complete** | In-memory vector store, auto-ingests on startup |
-| LLM abstraction | **Complete** | EchoClient (default) or OpenAIClient |
-| Embedding abstraction | **Complete** | LocalHashEmbedding (default) or OpenAIEmbedding |
-| Tool system (registry, base, 2 tools) | **Complete** | ValidateAddressTool, GetQuotePreviewTool |
-| Shipping provider abstraction | **Complete** | MockShippingProvider only |
-| Shipping advisor endpoint | **Complete** | `POST /api/v1/advisor/shipping` |
-| Tracking advisor endpoint | **Complete** | `POST /api/v1/advisor/tracking` |
-| Recommendation endpoint | **Complete** | `POST /api/v1/advisor/recommendation` (deterministic scoring) |
-| Orchestration endpoints | **Complete** | `POST /api/v1/orchestration/run`, `GET /tools` |
-| RAG endpoints | **Complete** | `POST /api/v1/rag/query`, `POST /api/v1/rag/ingest` |
-| TTL caching | **Complete** | recommendation_cache (300s), rag_cache (120s) |
-| Request logging middleware | **Complete** | X-Request-Id header |
-| Performance script | **Complete** | `scripts/perf_check.py` |
-| Real LLM (OpenAI) | **Ready but not enabled** | Set `LLM_PROVIDER=openai` + API key |
-| Real embeddings (OpenAI) | **Ready but not enabled** | Set `EMBEDDING_PROVIDER=openai` |
-| Persistent vector store | **Not implemented** | In-memory only |
-| Real shipping provider | **Not implemented** | Mock only |
-| LLM-driven tool selection | **Not implemented** | Regex-based only |
-| Multi-turn conversations | **Not implemented** | |
-| Rate limiting | **Not implemented** | |
-
-**Seed documents:** 2 files (`carrier-info.txt`, `shipping-faq.md`)
-**Tests:** 110 pytest tests across 17 test modules
-
-### Supabase
-
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Auth (email signup) | **Active** | Used by frontend and validated by Java API |
-| PostgreSQL database | **Active** | System of record for all transactional data |
-| Edge functions (5 implemented) | **Legacy/fallback** | `get-shipping-quotes`, `save-option`, `get-saved-options`, `remove-saved-option`, `generate-book-redirect` |
-| Edge functions (9 placeholder) | **Never implemented** | AI/MCP stubs from Lovable: `ai-*`, `create-shipment-reminders`, `escalate-tracking-issue`, `find-dropoff-locations`, `import-tracking-from-email`, `validate-address` |
+Frontend orchestrates between both APIs. Java and Python APIs do not call each other.
 
 ---
 
-## What Is Real vs Mock
+## What Works (Phases 1-13 Complete)
 
-| Layer | Current | Production Path |
-|-------|---------|-----------------|
-| Shipping quotes | **Mock** (hardcoded carrier rates in Java QuoteService) | Real carrier APIs (UPS, FedEx, DHL) |
-| LLM | **Mock** (EchoClient returns RAG context verbatim) | Set `LLM_PROVIDER=openai` + `OPENAI_API_KEY` |
-| Embeddings | **Mock** (LocalHashEmbedding, hash-based, no semantics) | Set `EMBEDDING_PROVIDER=openai` |
-| Vector store | **In-memory** (lost on restart, re-ingested from files) | Persistent store (Chroma, Qdrant, etc.) |
-| Shipping provider (tools) | **Mock** (MockShippingProvider, synthetic rates) | Real carrier integration |
-| Tool selection | **Regex-based** patterns | LLM-driven intent detection |
-| User auth | **Real** (Supabase Auth + JWT) | Already production-ready |
-| Database | **Real** (Supabase PostgreSQL) | Already production-ready |
-
----
-
-## Deployment Configuration (render.yaml)
-
-| Service | Plan | Build | Health Check |
-|---------|------|-------|--------------|
-| shipsmart-web | Static site | `pnpm install && pnpm build` | Root URL |
-| shipsmart-api-java | Starter | `./gradlew build -x test` | `/api/v1/health` |
-| shipsmart-api-python | Starter | `pip install uv && uv sync` | `/health` |
-
-**Feature flags in production:** All three `VITE_USE_JAVA_*` flags set to `"true"` (Java API active, Supabase edge functions available as fallback).
-
-**Secrets managed in Render dashboard (not in render.yaml):**
-- Supabase URL, anon key, service role key, JWT secret
-- Database URL, username, password
-- OpenAI API key (optional, not currently set)
+- 5-page React SPA with Supabase Auth
+- 3-step quote form with real-time carrier comparison
+- Saved options CRUD with JWT auth (Java API)
+- Booking redirect tracking (Java API)
+- AI Advisor page wired to Python API
+- Recommendation cards on quote results
+- RAG pipeline: ingestion -> chunking -> embedding -> vector search -> LLM
+- Tool system: ValidateAddressTool, GetQuotePreviewTool
+- Provider abstraction: `ShippingProvider` ABC with `MockShippingProvider`
+- LLM abstraction: `LLMClient` ABC with `EchoClient` and `OpenAIClient`
+- Embedding abstraction: `EmbeddingProvider` ABC with `LocalHashEmbedding` and `OpenAIEmbedding`
+- Vector store abstraction: `VectorStore` ABC with `InMemoryVectorStore`
+- Config-driven provider selection via env vars
+- Security: JWT auth on Java API, CORS, input validation, global error handling
+- Deployment: `render.yaml` with 3 services, health checks
 
 ---
 
-## Test Summary
+## What Is Mock / Placeholder
 
-| Service | Framework | Count | Status |
-|---------|-----------|-------|--------|
-| api-python | pytest | 110 | All passing |
-| api-java | JUnit 5 | 28 | All passing |
-| web | Vitest | (configured but test count not verified) | |
+| Component | Current Implementation | Abstraction |
+|-----------|----------------------|-------------|
+| Shipping provider | `MockShippingProvider` (default), `UPSProvider`, `FedExProvider`, `DHLProvider`, `USPSProvider` available — selected via `SHIPPING_PROVIDER` config | `ShippingProvider` ABC in `providers/shipping_provider.py`, factory in `providers/__init__.py` |
+| LLM | `EchoClient` (default), `OpenAIClient`, `GeminiClient`, `LlamaClient` available — selected via `LLM_PROVIDER` config | `LLMClient` ABC in `llm/client.py`, factory in same file |
+| Embeddings | `LocalHashEmbedding` — deterministic hash vectors, no semantics | `EmbeddingProvider` ABC in `rag/embeddings.py` |
+| Vector store | `InMemoryVectorStore` — cosine similarity, lost on restart | `VectorStore` ABC in `rag/vector_store.py` |
+| Tool selection | Regex/conditional matching in `shipping_advisor_service.py` | Hardcoded if/else on context keys |
 
 ---
 
-## Key Mismatches: Docs vs Code
+## RAG Knowledge Base
 
-1. **Git history is sparse.** Only 12 commits total. Phases 3-13 were all done in a single commit (`607c80f Phase3-7 completed`), so git history does not reflect the phased development described in docs.
+14 documents in `apps/api-python/data/documents/` organized into 4 categories:
 
-2. **ShipmentController is a stub.** Docs mention shipment endpoints but the controller methods are TODO with no service implementation.
+| Category | Count | Content |
+|----------|-------|---------|
+| `carriers/` | 5 | UPS, FedEx, DHL, USPS overviews + original carrier-info |
+| `guides/` | 4 | Shipping FAQ, ground vs express, packaging, address quality |
+| `scenarios/` | 2 | Recommendation tradeoffs, delays and exceptions |
+| `policies/` | 3 | Carrier comparison, returns/claims, international basics |
 
-3. **Java-to-Python communication not wired.** `INTERNAL_PYTHON_API_URL` is configured in both directions but neither service actually calls the other. The `WebClient` bean in Java's `AppConfig.java` is a TODO comment.
+Ingested on startup (recursive subdirectory scan), chunked by `RAG_CHUNK_SIZE=500`, stored in memory. ~150+ chunks in the vector store.
 
-4. **No CI/CD pipeline exists.** No GitHub Actions workflows found despite docs mentioning it as a near-term priority.
+---
 
-5. **`production-env-matrix.md` is superseded** by `production-env-reference.md` but both exist.
+## Test Coverage
+
+- **Python API**: 171 tests passing (adds 7 task-based LLM router tests)
+- **Java API**: 28 tests passing
+- **Lint**: 0 errors (new/modified files)
+- **Total**: 199 tests, all green
+
+---
+
+## Key Abstractions Already in Place
+
+These ABCs are designed for swapping implementations without changing tool/service logic:
+
+1. **`Provider`** (`providers/base.py`) — base for all external providers, with `name` property and `health_check()`
+2. **`ShippingProvider`** (`providers/shipping_provider.py`) — extends Provider with `validate_address()` and `get_quote_preview()`
+3. **`LLMClient`** (`llm/client.py`) — `complete(messages)` interface
+4. **`EmbeddingProvider`** (`rag/embeddings.py`) — `embed(texts)` and `dimensions` property
+5. **`VectorStore`** (`rag/vector_store.py`) — `add()`, `search()`, `clear()`, `count()`
+6. **`Tool`** (`tools/base.py`) — `name`, `description`, `parameters`, `execute()`, `schema()`, `validate_input()`
+7. **`ToolRegistry`** (`tools/registry.py`) — `register()`, `get()`, `list_tools()`, `list_schemas()`
+
+---
+
+## Config (Python API)
+
+All settings in `app/core/config.py`, driven by env vars:
+
+| Setting | Default | Production Path |
+|---------|---------|-----------------|
+| `SHIPPING_PROVIDER` | `"mock"` | Set to a real provider name |
+| `LLM_PROVIDER` | `""` (legacy single-provider; inherited by tasks if their var is empty) | `"openai"`, `"gemini"`, `"llama"` |
+| `LLM_PROVIDER_REASONING` | `""` (inherits `LLM_PROVIDER`) | `"openai"` (advisor reasoning) |
+| `LLM_PROVIDER_SYNTHESIS` | `""` (inherits `LLM_PROVIDER`) | `"gemini"` (RAG q&a, recommendation summary) |
+| `LLM_PROVIDER_FALLBACK` | `"echo"` | Provider used when a task's provider can't be built |
+| `OPENAI_API_KEY` | `""` | Set real key |
+| `OPENAI_MODEL` | `"gpt-4o-mini"` | Any OpenAI model |
+| `GEMINI_API_KEY` | `""` | Set real key |
+| `GEMINI_MODEL` | `"gemini-2.0-flash"` | Any Gemini model |
+| `LLAMA_BASE_URL` | `"http://localhost:11434"` | Ollama server URL |
+| `LLAMA_MODEL` | `"llama3.2"` | Any Ollama model |
+| `LLM_TIMEOUT` | `30` | Request timeout in seconds |
+| `LLM_MAX_TOKENS` | `1024` | Max response tokens |
+| `LLM_TEMPERATURE` | `0.3` | Response temperature |
+| `EMBEDDING_PROVIDER` | `""` (empty = LocalHash) | `"openai"` |
+| `VECTOR_STORE_TYPE` | `"memory"` | Only option currently |
+
+---
+
+## Startup Flow (`main.py`)
+
+1. Create `httpx.AsyncClient` for Java API communication
+2. `create_embedding_provider()` — factory, reads `EMBEDDING_PROVIDER`
+3. `create_vector_store()` — factory, always returns `InMemoryVectorStore`
+4. `create_llm_router()` — task-based router. Builds one client per task (`reasoning`, `synthesis`, `fallback`); each task resolves independently from `LLM_PROVIDER_<TASK>` → legacy `LLM_PROVIDER` → `LLM_PROVIDER_FALLBACK` → EchoClient. Stored on `app.state.llm_router`. The synthesis client is also exposed at `app.state.rag["llm_client"]` for back-compat.
+5. `create_shipping_provider()` — factory reads `SHIPPING_PROVIDER`, falls back to mock if credentials missing
+6. `ToolRegistry` — registers `ValidateAddressTool` and `GetQuotePreviewTool`
+7. Mount routes: health, info, orchestration, rag, advisor

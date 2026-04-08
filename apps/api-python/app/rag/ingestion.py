@@ -16,10 +16,14 @@ logger = logging.getLogger(__name__)
 
 
 def load_documents(directory: str | Path) -> list[tuple[str, str]]:
-    """Load .txt and .md files from a directory.
+    """Load .txt and .md files from a directory, recursing into subdirectories.
+
+    Source names use relative paths from the documents root so that
+    subdirectory structure is visible in retrieval results
+    (e.g. "carriers/ups-overview.md" instead of just "ups-overview.md").
 
     Returns:
-        List of (filename, content) tuples.
+        List of (relative_path, content) tuples sorted by path.
     """
     path = Path(directory)
     if not path.is_dir():
@@ -27,12 +31,14 @@ def load_documents(directory: str | Path) -> list[tuple[str, str]]:
         return []
 
     docs: list[tuple[str, str]] = []
-    for ext in ("*.txt", "*.md"):
+    for ext in ("**/*.txt", "**/*.md"):
         for file in sorted(path.glob(ext)):
             content = file.read_text(encoding="utf-8").strip()
             if content:
-                docs.append((file.name, content))
-                logger.debug("Loaded document: %s (%d chars)", file.name, len(content))
+                # Use relative path from documents root as source name
+                relative = file.relative_to(path).as_posix()
+                docs.append((relative, content))
+                logger.debug("Loaded document: %s (%d chars)", relative, len(content))
 
     logger.info("Loaded %d documents from %s", len(docs), path)
     return docs

@@ -18,6 +18,7 @@ import logging
 from dataclasses import dataclass
 
 from app.llm.client import LLMClient
+from app.llm.prompts import build_advisor_prompt
 from app.rag.embeddings import EmbeddingProvider
 from app.rag.retrieval import retrieve
 from app.rag.vector_store import SearchResult, VectorStore
@@ -123,7 +124,7 @@ async def get_shipping_advice(
     if tool_results:
         tool_text = "\n\n".join(tool_results)
 
-    prompt = _build_advisor_prompt(query, context_text, tool_text)
+    prompt = build_advisor_prompt(query, context_text, tool_text)
 
     # Step 4: Get LLM response
     answer = ""
@@ -149,22 +150,3 @@ async def get_shipping_advice(
     )
 
 
-def _build_advisor_prompt(query: str, context: str, tool_results: str) -> list[dict]:
-    """Build a chat-style prompt for the shipping advisor."""
-    system_msg = (
-        "You are a helpful shipping expert assistant for ShipSmart. "
-        "Answer shipping-related questions based on the provided context and tool results. "
-        "Be practical, concise, and honest about limitations. "
-        "If the context doesn't have an answer, say so rather than guessing."
-    )
-
-    user_parts = [f"Question: {query}"]
-    if context:
-        user_parts.append(f"Relevant context:\n{context}")
-    if tool_results:
-        user_parts.append(f"Tool results:\n{tool_results}")
-
-    return [
-        {"role": "system", "content": system_msg},
-        {"role": "user", "content": "\n\n".join(user_parts)},
-    ]
