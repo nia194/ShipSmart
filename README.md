@@ -41,18 +41,30 @@ ShipSmart/
 
 ```
 Browser (React SPA)
-    ├── → apps/api-java  (Spring Boot)  — shipments, quotes, saved options
-    └── → apps/api-python (FastAPI)     — AI workflows, orchestration
-                   ↓
-           Supabase Postgres (external)
+    ├── → apps/api-java  (Spring Boot)  — shipments, quotes, saved options, bookings
+    └── → apps/api-python (FastAPI)     — RAG, advisors, tool orchestration, LLM routing
+                   │                          │
+                   │                          └── (optional) → Java API for quote hydration
+                   ↓                          ↓
+           Supabase Postgres (auth + transactional data + pgvector RAG store)
 ```
 
-- **Java** owns core transactional data. Single writer for the database.
-- **Python** handles AI/orchestration. Does not own database tables.
-- **Supabase** remains the database and auth provider.
-- **No API gateway** at this stage — frontend calls both backends directly.
+- **Java** owns core transactional data. Single writer for shipments/quotes/options.
+- **Python** handles AI workflows: RAG retrieval, shipping/tracking advisors, recommendation scoring, tool orchestration, multi-provider LLM routing. It does not own DB tables, but it *reads* a `rag_chunks` pgvector table for persistent retrieval.
+- **Supabase** is the database, auth provider, and pgvector host.
+- **Frontend → both backends directly** (no API gateway).
+- **Python → Java**: optional internal HTTP call to hydrate recommendations from real Java-side quotes by `shipment_request_id`.
 
-See `docs/architecture.md` and `docs/service-boundaries.md` for full details.
+### AI / RAG capabilities (api-python)
+
+- **Multi-provider LLM router**: OpenAI, Anthropic Claude, Google Gemini, Llama via Ollama, Echo fallback. Per-task routing (`reasoning`, `synthesis`, `fallback`).
+- **RAG pipeline**: pluggable embeddings (OpenAI / local hash placeholder) + pluggable vector store (in-memory or **Postgres + pgvector**). Auto-ingest on first boot.
+- **Tool orchestration**: in-process tool registry (`validate_address`, `get_quote_preview`). Selection is deterministic (regex) with **LLM-assisted fallback** for natural-language queries.
+- **Advisors**: shipping advisor and tracking advisor combine RAG context + tool results + LLM reasoning into structured responses.
+- **Recommendation engine**: deterministic scoring (cheapest / fastest / best_value / balanced) with optional LLM summary; can hydrate inputs from the Java API.
+- **Hardening**: per-IP rate limiting (slowapi), TTL caches, loud startup warnings when degraded modes (mock provider, hash embeddings, echo LLM) are active.
+
+See `apps/api-python/README.md` for the full FastAPI service docs and `docs/` (gitignored, local-only study notes) for the deeper architectural narrative.
 
 ---
 
@@ -158,18 +170,23 @@ See `docs/deployment-render.md` for the full guide.
 
 ---
 
-## Migration from Lovable
+## Per-app READMEs
 
-This monorepo is the migration target from the Lovable-generated project.
-The Lovable code lives in `read-folder/blank-slate-project-main/`.
+Each app has its own README with setup, env vars, endpoints, and gotchas:
 
-**Follow `docs/migration-from-lovable.md` for the step-by-step migration guide.**
+- [`apps/api-python/README.md`](apps/api-python/README.md) — FastAPI AI service
+- [`apps/api-java/README.md`](apps/api-java/README.md) — Spring Boot transactional API
+- [`apps/web/README.md`](apps/web/README.md) — React + Vite frontend
 
-Priority migration order:
-1. Copy `src/` files into `apps/web/src/`
-2. Copy `supabase/` folder (migrations + edge functions)
-3. Run `pnpm nx serve web` and verify the app loads
-4. Migrate Supabase Edge Functions to Java/Python APIs one at a time
+---
+
+## Supabase migrations
+
+SQL migrations live in `supabase/migrations/`. Notable additions:
+
+- `20260408034204_create_rag_chunks.sql` — `vector` extension + `rag_chunks` table used by the FastAPI RAG store when `VECTOR_STORE_TYPE=pgvector`. Vector dimension is fixed at 1536 to match OpenAI `text-embedding-3-small`.
+
+Apply with `supabase db push` (requires the Supabase CLI and a linked project).
 
 ---
 
