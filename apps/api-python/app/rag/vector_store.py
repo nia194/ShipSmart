@@ -113,8 +113,11 @@ def create_vector_store() -> VectorStore:
 
     Supported backends:
       - "memory" (default): InMemoryVectorStore — fast, non-persistent.
-      - "pgvector": PGVectorStore — Postgres + pgvector extension.
+      - "pgvector": PGVectorStore — Direct asyncpg to Postgres + pgvector extension.
         Requires DATABASE_URL to be set. Caller must `await store.connect()`
+        during startup.
+      - "mcp": MCPVectorStore — Postgres + pgvector via Supabase MCP HTTP server.
+        Requires MCP_SERVER_URL to be set. Caller must `await store.connect()`
         during startup.
     """
     from app.core.config import settings  # local import to avoid cycles
@@ -123,4 +126,11 @@ def create_vector_store() -> VectorStore:
     if backend == "pgvector":
         from app.rag.pgvector_store import PGVectorStore
         return PGVectorStore(dsn=settings.database_url, table=settings.pgvector_table)
+    elif backend == "mcp":
+        from app.rag.mcp_vector_store import MCPVectorStore
+        return MCPVectorStore(
+            mcp_server_url=settings.mcp_server_url,
+            table=settings.pgvector_table,
+            mcp_api_key=settings.mcp_api_key,
+        )
     return InMemoryVectorStore()
