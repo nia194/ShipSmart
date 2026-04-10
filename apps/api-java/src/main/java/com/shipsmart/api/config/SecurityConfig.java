@@ -37,6 +37,7 @@ public class SecurityConfig {
                 .formLogin(fl -> fl.disable())
                 .httpBasic(hb -> hb.disable())
                 .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/health", "/health/**").permitAll()
                         .requestMatchers("/api/v1/health").permitAll()
                         .requestMatchers("/api/v1/quotes/**").permitAll()
                         .requestMatchers("/api/v1/bookings/**").permitAll()
