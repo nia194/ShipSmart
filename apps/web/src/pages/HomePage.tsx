@@ -7,11 +7,14 @@ import { format, isBefore, startOfDay } from "date-fns";
 import { CityInput } from "@/components/shipping/CityInput";
 import { StepNum, PriceBadge } from "@/components/shipping/SharedUI";
 import { Section } from "@/components/shipping/QuoteRow";
+import { CompareSection } from "@/components/shipping/CompareSection";
 import { PKG_TYPES, HANDLING, getItemErrors, buildBookUrl, type PackageItem, type ShippingService } from "@/lib/shipping-data";
 import { buildSnapshotKey } from "@/hooks/useSavedOptions";
 import { useShippingQuotes } from "@/hooks/useShippingQuotes";
 import { useRecommendation } from "@/hooks/useRecommendation";
+import { useAuth } from "@/contexts/AuthContext";
 import { RecommendationCard } from "@/components/advisor/RecommendationCard";
+import { SaveSignInModal } from "@/components/auth/SaveSignInModal";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -45,6 +48,7 @@ const LoadingSkeleton = () => (
 const today = startOfDay(new Date());
 
 export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
+  const { user } = useAuth();
   const [origin, setOrigin] = useState("");
   const [dest, setDest] = useState("");
   const [step1Done, setStep1Done] = useState(false);
@@ -58,6 +62,9 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
   const [editingStep, setEditingStep] = useState<number | null>(null);
   const [showErr, setShowErr] = useState(false);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [compareSelected, setCompareSelected] = useState<ShippingService[]>([]);
+  const [signInModalOpen, setSignInModalOpen] = useState(false);
+  const [pendingSaveService, setPendingSaveService] = useState<ShippingService | null>(null);
 
   const { loading, data, fetchQuotes } = useShippingQuotes();
 
@@ -105,6 +112,60 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropDate]);
 
+  // Clear compare selections when new results arrive
+  useEffect(() => {
+    setCompareSelected([]);
+  }, [data]);
+
+  // Handle edit-after-results: refresh when editing committed
+  const handleEditCommitted = useCallback(() => {
+    if (submitted && allValid) {
+      // User closed edit dialog with valid values; refetch results
+      setCompareSelected([]); // Clear old comparisons
+      setOpenId(null); // Close any expanded rows
+      setTimeout(() => res.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 150);
+      fetchQuotes(origin, dest, dropDateStr, delivDateStr, packages);
+    }
+  }, [submitted, allValid, origin, dest, dropDateStr, delivDateStr, packages, fetchQuotes]);
+
+  const handleToggleCompare = (svc: ShippingService) => {
+    setCompareSelected((prev) => {
+      const isSelected = prev.some((s) => s.id === svc.id);
+      if (isSelected) {
+        return prev.filter((s) => s.id !== svc.id);
+      } else {
+        // Max 3 services in compare
+        if (prev.length >= 3) {
+          return [prev[1], prev[2], svc];
+        }
+        return [...prev, svc];
+      }
+    });
+  };
+
+  const handleSaveWithAuth = (svc: ShippingService) => {
+    if (!user) {
+      setPendingSaveService(svc);
+      setSignInModalOpen(true);
+    } else {
+      onSaveService(svc, { origin, dest, dropDate: dropDateStr, delivDate: delivDateStr, pkgSummary, bookUrl: bUrl(svc) });
+    }
+  };
+
+  const handleSignInComplete = () => {
+    if (pendingSaveService) {
+      onSaveService(pendingSaveService, {
+        origin,
+        dest,
+        dropDate: dropDateStr,
+        delivDate: delivDateStr,
+        pkgSummary,
+        bookUrl: bUrl(pendingSaveService),
+      });
+      setPendingSaveService(null);
+    }
+  };
+
   const addPkg = () => setPackages([...packages, { type: "boxes", qty: "1", weight: "", l: "", w: "", h: "", handling: "standard" }]);
   const rmPkg = (i: number) => { if (packages.length > 1) setPackages(packages.filter((_, idx) => idx !== i)); };
   const upPkg = (i: number, f: string, v: string) => {
@@ -132,10 +193,6 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
   const toggle = (id: string) => setOpenId(openId === id ? null : id);
   const bUrl = (svc: ShippingService) => buildBookUrl(svc, origin, dest, dropDateStr, delivDateStr, packages);
   const pkgSummary = `${ti} pkg${ti > 1 ? "s" : ""} \u00B7 ${tw} lbs`;
-
-  const handleSaveService = (svc: ShippingService) => {
-    onSaveService(svc, { origin, dest, dropDate: dropDateStr, delivDate: delivDateStr, pkgSummary, bookUrl: bUrl(svc) });
-  };
 
   /** Check if a service is saved for the current search context */
   const isServiceSaved = (svc: ShippingService) => {
@@ -351,6 +408,9 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
           <div ref={res} style={{ padding: "8px 0 80px" }}>
             {loading ? <LoadingSkeleton /> : data && (
               <div style={{ animation: "fadeIn .3s both" }}>
+                {/* Compare Section */}
+                <CompareSection selectedServices={compareSelected} onRemove={(serviceId) => handleToggleCompare(compareSelected.find(s => s.id === serviceId)!)} />
+
                 {data.prime && (
                   <Section
                     icon={"\uD83C\uDFE2"} title="Prime Providers" subtitle="Major carriers with guaranteed service levels"
@@ -359,7 +419,9 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
                     openId={openId} onToggle={toggle} animBase={0.1}
                     buildUrl={bUrl}
                     savedIds={new Set((data.prime.top ?? []).concat(data.prime.more ?? []).filter(s => isServiceSaved(s)).map(s => s.id))}
-                    onSaveService={handleSaveService}
+                    onSaveService={handleSaveWithAuth}
+                    compareSelected={compareSelected}
+                    onToggleCompare={handleToggleCompare}
                     origin={origin} dest={dest}
                   />
                 )}
@@ -371,7 +433,9 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
                     openId={openId} onToggle={toggle} animBase={0.3}
                     buildUrl={bUrl}
                     savedIds={new Set((data.private.top ?? []).concat(data.private.more ?? []).filter(s => isServiceSaved(s)).map(s => s.id))}
-                    onSaveService={handleSaveService}
+                    onSaveService={handleSaveWithAuth}
+                    compareSelected={compareSelected}
+                    onToggleCompare={handleToggleCompare}
                     origin={origin} dest={dest}
                   />
                 )}
@@ -411,6 +475,9 @@ export default function HomePage({ savedIds, onSaveService }: HomePageProps) {
             )}
           </div>
         )}
+
+        {/* Sign In Modal for Save */}
+        <SaveSignInModal open={signInModalOpen} onOpenChange={setSignInModalOpen} onSignInComplete={handleSignInComplete} />
       </div>
     </div>
   );
