@@ -8,7 +8,7 @@ import { TIER_BADGES, type ShippingService } from "@/lib/shipping-data";
 import { supabase } from "@/integrations/supabase/client";
 import { apiConfig, javaApi } from "@/config/api";
 
-const COLS = "36px 1fr 60px 70px auto 36px 20px";
+const COLS = "36px 1fr 60px 70px auto 36px 36px 20px";
 
 interface DetailProps { svc: ShippingService; open: boolean; bookUrl: string; onBook: () => void }
 
@@ -58,7 +58,7 @@ const Detail = ({ svc, open, bookUrl, onBook }: DetailProps) => {
 
 export const ColHeader = () => (
   <div style={{ display: "grid", gridTemplateColumns: COLS, gap: 8, padding: "10px 18px 6px", borderBottom: "1.5px solid #f0f0f2" }}>
-    {["", "Service", "Transit", "Tier", "Rate", "", ""].map((h, i) => (
+    {["", "Service", "Transit", "Tier", "Rate", "", "", ""].map((h, i) => (
       <span key={i} style={{ fontSize: 10, fontWeight: 700, color: "#b0b5c0", textTransform: "uppercase", letterSpacing: ".8px", textAlign: i === 4 ? "right" : i >= 2 ? "center" : "left" }}>{h}</span>
     ))}
   </div>
@@ -75,12 +75,15 @@ interface RowProps {
   onSave: (svc: ShippingService) => void;
   origin?: string;
   dest?: string;
+  compareSelected?: ShippingService[];
+  onToggleCompare?: (svc: ShippingService) => void;
 }
 
-export const Row = ({ svc, openId, onToggle, idx, animBase = 0, bookUrl, isSaved, onSave, origin, dest }: RowProps) => {
+export const Row = ({ svc, openId, onToggle, idx, animBase = 0, bookUrl, isSaved, onSave, origin, dest, compareSelected = [], onToggleCompare }: RowProps) => {
   const [justSaved, setJustSaved] = useState(false);
   const isOpen = openId === svc.id;
   const tb = TIER_BADGES[svc.tier] || TIER_BADGES.STANDARD;
+  const isCompareSelected = compareSelected.some(s => s.id === svc.id);
 
   const handleSave = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -89,6 +92,11 @@ export const Row = ({ svc, openId, onToggle, idx, animBase = 0, bookUrl, isSaved
       setJustSaved(true);
       setTimeout(() => setJustSaved(false), 500);
     }
+  };
+
+  const handleToggleCompare = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onToggleCompare?.(svc);
   };
 
   const trackRedirect = () => {
@@ -137,6 +145,11 @@ export const Row = ({ svc, openId, onToggle, idx, animBase = 0, bookUrl, isSaved
             <BookmarkIcon filled={isSaved} justSaved={justSaved} />
           </button>
         </div>
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <button onClick={handleToggleCompare} style={{ padding: "4px 8px", borderRadius: 6, background: isCompareSelected ? "#f0f5ff" : "transparent", border: isCompareSelected ? "1.5px solid #0071e3" : "1.5px solid #e5e7eb", cursor: "pointer", fontSize: 13, fontWeight: 600, color: isCompareSelected ? "#0071e3" : "#9ca3af", transition: "all .2s" }} title={isCompareSelected ? "Remove from compare" : "Add to compare"}>
+            {isCompareSelected ? "✓" : "Compare"}
+          </button>
+        </div>
         <span style={{ fontSize: 14, color: "#9ca3af", transition: "transform .3s", display: "inline-block", transform: isOpen ? "rotate(180deg)" : "none", textAlign: "right" }}>▾</span>
       </div>
       <Detail svc={svc} open={isOpen} bookUrl={bookUrl} onBook={trackRedirect} />
@@ -159,9 +172,11 @@ interface SectionProps {
   onSaveService: (svc: ShippingService) => void;
   origin?: string;
   dest?: string;
+  compareSelected?: ShippingService[];
+  onToggleCompare?: (svc: ShippingService) => void;
 }
 
-export const Section = ({ icon, title, subtitle, badge, topRows, moreRows, openId, onToggle, animBase, buildUrl, savedIds, onSaveService, origin, dest }: SectionProps) => {
+export const Section = ({ icon, title, subtitle, badge, topRows, moreRows, openId, onToggle, animBase, buildUrl, savedIds, onSaveService, origin, dest, compareSelected = [], onToggleCompare }: SectionProps) => {
   const [more, setMore] = useState(false);
   return (
     <div style={{ marginBottom: 22, animation: `fadeUp .35s ${animBase}s both` }}>
@@ -174,14 +189,14 @@ export const Section = ({ icon, title, subtitle, badge, topRows, moreRows, openI
       <div style={{ fontSize: 11.5, color: "#9ca3af", marginTop: -4, marginBottom: 6 }}>{subtitle}</div>
       <div style={{ borderRadius: 14, overflow: "hidden", border: "1.5px solid #eeeff1", background: "#fff" }}>
         <ColHeader />
-        {topRows.map((s, i) => <Row key={s.id} svc={s} openId={openId} onToggle={onToggle} idx={i} animBase={animBase + 0.05} bookUrl={buildUrl(s)} isSaved={savedIds.has(s.id)} onSave={onSaveService} origin={origin} dest={dest} />)}
+        {topRows.map((s, i) => <Row key={s.id} svc={s} openId={openId} onToggle={onToggle} idx={i} animBase={animBase + 0.05} bookUrl={buildUrl(s)} isSaved={savedIds.has(s.id)} onSave={onSaveService} origin={origin} dest={dest} compareSelected={compareSelected} onToggleCompare={onToggleCompare} />)}
         {moreRows.length > 0 && (
           <>
             <div onClick={() => setMore(!more)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 20px", cursor: "pointer", borderTop: "1px solid #f0f0f2", color: "#0071e3", fontSize: 13, fontWeight: 600 }}>
               <span style={{ fontSize: 14, transition: "transform .3s", display: "inline-block", transform: more ? "rotate(180deg)" : "none" }}>▾</span>
               {more ? "Hide" : `View ${moreRows.length} more`}
             </div>
-            {more && moreRows.map((s, i) => <Row key={s.id} svc={s} openId={openId} onToggle={onToggle} idx={i} animBase={0} bookUrl={buildUrl(s)} isSaved={savedIds.has(s.id)} onSave={onSaveService} origin={origin} dest={dest} />)}
+            {more && moreRows.map((s, i) => <Row key={s.id} svc={s} openId={openId} onToggle={onToggle} idx={i} animBase={0} bookUrl={buildUrl(s)} isSaved={savedIds.has(s.id)} onSave={onSaveService} origin={origin} dest={dest} compareSelected={compareSelected} onToggleCompare={onToggleCompare} />)}
           </>
         )}
       </div>
