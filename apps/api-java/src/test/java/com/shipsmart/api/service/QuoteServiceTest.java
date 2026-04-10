@@ -2,6 +2,7 @@ package com.shipsmart.api.service;
 
 import com.shipsmart.api.dto.*;
 import com.shipsmart.api.repository.ShipmentRequestRepository;
+import com.shipsmart.api.service.provider.FedExProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,6 +12,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class QuoteServiceTest {
@@ -18,11 +21,16 @@ class QuoteServiceTest {
     @Mock
     private ShipmentRequestRepository shipmentRequestRepository;
 
+    @Mock
+    private FedExProvider fedExProvider;
+
     private QuoteService quoteService;
 
     @BeforeEach
     void setUp() {
-        quoteService = new QuoteService(shipmentRequestRepository);
+        // By default, mock FedEx to return empty list (uses mock fallback)
+        when(fedExProvider.getQuotes(any())).thenReturn(List.of());
+        quoteService = new QuoteService(shipmentRequestRepository, fedExProvider);
     }
 
     @Test
@@ -154,5 +162,99 @@ class QuoteServiceTest {
         // pm = 50/30 ≈ 1.6667; UPS Ground: 58.90 * 1.6667 = 98.17
         ShippingServiceDto ups = response.prime().top().get(0);
         assertEquals(98.17, ups.price(), 0.01);
+    }
+
+    @Test
+    void generateQuotes_integratesRealFedExQuotes() {
+        // Mock FedEx provider to return real quotes
+        ShippingServiceDto realFedExGround = new ShippingServiceDto(
+                "fedex-ground",
+                "FedEx",
+                "FedEx Ground",
+                "STANDARD",
+                45.50,
+                null,
+                5,
+                "Wed, Apr 20",
+                null,
+                false,
+                null,
+                null,
+                null,
+                Map.of(),
+                List.of("Tracking")
+        );
+
+        ShippingServiceDto realFedExExpress = new ShippingServiceDto(
+                "fedex-express",
+                "FedEx",
+                "FedEx Express Saver",
+                "EXPRESS",
+                95.00,
+                null,
+                3,
+                "Mon, Apr 18",
+                null,
+                false,
+                null,
+                null,
+                null,
+                Map.of(),
+                List.of("Tracking")
+        );
+
+        when(fedExProvider.getQuotes(any())).thenReturn(
+                List.of(realFedExGround, realFedExExpress)
+        );
+
+        QuoteRequest request = new QuoteRequest(
+                "NYC, NY", "LA, CA",
+                "2026-04-15", "2026-04-20",
+                List.of(new PackageItemDto("luggage", "1", "25", "24", "15", "10", "standard"))
+        );
+
+        QuoteResponse response = quoteService.generateQuotes(request, null);
+
+        // Verify structure
+        assertNotNull(response.prime());
+        assertNotNull(response.prime().top());
+        assertFalse(response.prime().top().isEmpty());
+
+        // UPS should be first
+        assertEquals("ups-ground", response.prime().top().get(0).id());
+
+        // Real FedEx should be second (the cheaper one)
+        assertEquals("fedex-ground", response.prime().top().get(1).id());
+        assertEquals(45.50, response.prime().top().get(1).price(), 0.01);
+
+        // DHL should be third
+        assertEquals("dhl-express", response.prime().top().get(2).id());
+
+        // Remaining FedEx quote should be in "more"
+        assertTrue(response.prime().more().stream()
+                .anyMatch(s -> s.id().equals("fedex-express")));
+    }
+
+    @Test
+    void generateQuotes_fallsBackToMockWhenFedExUnavailable() {
+        // FedEx provider returns empty (simulating API failure)
+        when(fedExProvider.getQuotes(any())).thenReturn(List.of());
+
+        QuoteRequest request = new QuoteRequest(
+                "NYC, NY", "LA, CA",
+                "2026-04-15", "2026-04-20",
+                List.of(new PackageItemDto("luggage", "1", "25", "24", "15", "10", "standard"))
+        );
+
+        QuoteResponse response = quoteService.generateQuotes(request, null);
+
+        // Should still have quotes (using mock fallback)
+        assertEquals(3, response.prime().top().size(), "Prime top should have 3 quotes (UPS, FedEx mock, DHL)");
+        assertEquals(2, response.prime().more().size(), "Prime more should have 2 mock FedEx quotes");
+
+        // Verify structure matches legacy behavior
+        assertEquals("ups-ground", response.prime().top().get(0).id());
+        assertEquals("fedex-express", response.prime().top().get(1).id());  // Mock FedEx
+        assertEquals("dhl-express", response.prime().top().get(2).id());
     }
 }
