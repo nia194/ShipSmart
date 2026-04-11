@@ -64,11 +64,15 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 256
 
     # ── Vector store ─────────────────────────────────────────────────────────
-    vector_store_type: str = "memory"  # "memory" or "pgvector"
+    vector_store_type: str = "memory"  # "memory", "pgvector", or "mcp"
     vector_store_path: str = ""
-    database_url: str = ""              # Postgres connection string for pgvector
-    pgvector_table: str = "rag_chunks"  # table name used by PGVectorStore
+    database_url: str = ""              # Postgres connection string for pgvector backend
+    pgvector_table: str = "rag_chunks"  # table name used by PGVectorStore / MCPVectorStore
     rag_auto_ingest: bool = True        # auto-ingest at startup if store is empty
+
+    # ── MCP Vector Store (Supabase MCP Server) ────────────────────────────────
+    mcp_server_url: str = ""            # MCP server HTTP endpoint (for "mcp" backend)
+    mcp_api_key: str = ""               # Optional API key for MCP server authentication
 
     # ── Anthropic / Claude ───────────────────────────────────────────────────
     anthropic_api_key: str = ""

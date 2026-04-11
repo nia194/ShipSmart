@@ -59,6 +59,12 @@ tmp/
 
 # ─── Personal docs (not for GitHub) ───────────────────────────────────────────
 docs/
+BLOCK-*.md
+DEPLOYMENT_*.md
+ENV_VARS_*.md
+
+# ─── MCP config (push to Render manually) ─────────────────────────────────────
+.mcp.json
 
 # ─── Supabase local state ─────────────────────────────────────────────────────
 supabase/.branches/
