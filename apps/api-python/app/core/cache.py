@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class TTLCache:
-    """In-memory cache with per-entry TTL expiration."""
+    """In-memory cache with per-entry TTL (Time to Live) expiration."""
 
     def __init__(self, default_ttl: int = 120, max_size: int = 256) -> None:
         self._store: dict[str, tuple[float, Any]] = {}
@@ -74,7 +74,7 @@ class TTLCache:
 
     @staticmethod
     def make_key(*parts: Any) -> str:
-        """Create a deterministic cache key from arbitrary arguments."""
+        """Create a deterministic cache key from arbitrary parameters/arguments."""
         raw = json.dumps(parts, sort_keys=True, default=str)
         return hashlib.sha256(raw.encode()).hexdigest()[:16]
 

@@ -3,6 +3,8 @@ package com.shipsmart.api.service;
 import com.shipsmart.api.domain.ShipmentRequest;
 import com.shipsmart.api.dto.*;
 import com.shipsmart.api.repository.ShipmentRequestRepository;
+import com.shipsmart.api.service.provider.FedExProvider;
+import com.shipsmart.api.service.provider.ShipmentForQuote;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -11,19 +13,16 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 /**
- * QuoteService — generates deterministic mock shipping quotes.
+ * QuoteService — generates shipping quotes combining real and mock providers.
  * <p>
- * This is a direct port of the legacy Supabase edge function
- * {@code supabase/functions/get-shipping-quotes/index.ts}.
+ * Current strategy (MVP):
+ * - FedEx: Real quotes from FedEx Developer API
+ * - UPS, DHL, Private: Mock quotes (for parity with legacy behavior)
  * <p>
- * The logic is intentionally hardcoded for parity. Real carrier integrations
- * will replace this in a future phase.
+ * Future: Add real UPS, DHL providers.
  */
 @Service
 public class QuoteService {
@@ -33,14 +32,16 @@ public class QuoteService {
             DateTimeFormatter.ofPattern("EEE, MMM d", Locale.US);
 
     private final ShipmentRequestRepository shipmentRequestRepository;
+    private final FedExProvider fedExProvider;
 
-    public QuoteService(ShipmentRequestRepository shipmentRequestRepository) {
+    public QuoteService(ShipmentRequestRepository shipmentRequestRepository, FedExProvider fedExProvider) {
         this.shipmentRequestRepository = shipmentRequestRepository;
+        this.fedExProvider = fedExProvider;
     }
 
     /**
      * Generate quotes for a shipment request.
-     * Persists the shipment request and returns mock quotes.
+     * Persists the shipment request and returns a mix of real (FedEx) and mock quotes.
      */
     public QuoteResponse generateQuotes(QuoteRequest request, String userId) {
         // Calculate totals
@@ -54,8 +55,19 @@ public class QuoteService {
         // Persist shipment request (matches legacy edge function behavior)
         persistShipmentRequest(request, userId, totalWeight, totalItems);
 
-        // Generate mock quotes (exact parity with edge function)
-        return buildMockQuotes(request.dropOffDate(), totalWeight);
+        // Build shipment for provider calls
+        ShipmentForQuote shipment = new ShipmentForQuote(
+                request.origin(),
+                request.destination(),
+                request.dropOffDate(),
+                request.expectedDeliveryDate(),
+                request.packages(),
+                totalWeight,
+                totalItems
+        );
+
+        // Generate quotes: real FedEx + mock fallbacks
+        return buildQuotesWithRealProviders(shipment, totalWeight);
     }
 
     private void persistShipmentRequest(QuoteRequest request, String userId,
@@ -78,33 +90,51 @@ public class QuoteService {
         }
     }
 
-    // ── Mock quote generation (ported from edge function) ─────────────────────
+    // ── Real + Mock quote generation ────────────────────────────────────────
 
-    private QuoteResponse buildMockQuotes(String dropOffDate, double totalWeight) {
+    private QuoteResponse buildQuotesWithRealProviders(ShipmentForQuote shipment, double totalWeight) {
         double pm = Math.max(0.8, Math.min(2.0, totalWeight / 30.0));
-        LocalDate baseDate = LocalDate.parse(dropOffDate);
+        LocalDate baseDate = LocalDate.parse(shipment.dropOffDate());
+
+        // Try to fetch real FedEx quotes
+        List<ShippingServiceDto> realFedExQuotes = fedExProvider.getQuotes(shipment);
+        log.info("FedEx provider returned {} real quotes", realFedExQuotes.size());
+
+        // Build prime providers section
+        List<ShippingServiceDto> primeTop = new ArrayList<>();
+        List<ShippingServiceDto> primeMore = new ArrayList<>();
+
+        // Always include UPS Ground as top pick
+        primeTop.add(upsGround(pm, baseDate));
+
+        // If FedEx quotes available, use top FedEx as second pick; otherwise use mock
+        if (!realFedExQuotes.isEmpty()) {
+            primeTop.add(realFedExQuotes.get(0));
+            // Add remaining FedEx quotes to "more"
+            primeMore.addAll(realFedExQuotes.subList(1, realFedExQuotes.size()));
+        } else {
+            // Fallback to mock FedEx if API unavailable
+            log.info("FedEx provider unavailable; using mock quotes");
+            primeTop.add(fedexExpressSaver(pm, baseDate));
+            primeMore.add(fedexGround(pm, baseDate));
+            primeMore.add(fedexGroundEconomy(pm, baseDate));
+        }
+
+        // Add DHL as third top pick (mock, for now)
+        primeTop.add(dhlExpressWorldwide(pm, baseDate));
+
+        // Build private section (all mock, as before)
+        List<ShippingServiceDto> privateTop = List.of(
+                luglessStandard(pm, baseDate),
+                luggageToShipStandard(pm, baseDate)
+        );
+        List<ShippingServiceDto> privateMore = List.of(
+                luggageToShipEconomy(pm, baseDate)
+        );
 
         return new QuoteResponse(
-                new QuoteSectionDto(
-                        List.of(
-                                upsGround(pm, baseDate),
-                                fedexExpressSaver(pm, baseDate),
-                                dhlExpressWorldwide(pm, baseDate)
-                        ),
-                        List.of(
-                                fedexGround(pm, baseDate),
-                                fedexGroundEconomy(pm, baseDate)
-                        )
-                ),
-                new QuoteSectionDto(
-                        List.of(
-                                luglessStandard(pm, baseDate),
-                                luggageToShipStandard(pm, baseDate)
-                        ),
-                        List.of(
-                                luggageToShipEconomy(pm, baseDate)
-                        )
-                )
+                new QuoteSectionDto(primeTop, primeMore),
+                new QuoteSectionDto(privateTop, privateMore)
         );
     }
 
