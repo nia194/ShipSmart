@@ -1,6 +1,7 @@
 package com.shipsmart.api.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.shipsmart.api.auth.SupabaseJwtVerifier;
 import com.shipsmart.api.config.SecurityConfig;
 import com.shipsmart.api.dto.SavedOptionResponse;
 import com.shipsmart.api.dto.ShippingServiceDto;
@@ -41,6 +42,9 @@ class SavedOptionControllerTest {
 
     @MockitoBean
     private SavedOptionService savedOptionService;
+
+    @MockitoBean
+    private SupabaseJwtVerifier jwtVerifier;
 
     private static final String USER_ID = "11111111-1111-1111-1111-111111111111";
 

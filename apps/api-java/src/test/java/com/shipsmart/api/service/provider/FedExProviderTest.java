@@ -1,6 +1,7 @@
 package com.shipsmart.api.service.provider;
 
 import com.shipsmart.api.dto.PackageItemDto;
+import com.shipsmart.api.dto.ShippingServiceDto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

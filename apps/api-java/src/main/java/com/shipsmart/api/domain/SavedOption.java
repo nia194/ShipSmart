@@ -1,6 +1,8 @@
 package com.shipsmart.api.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -52,6 +54,7 @@ public class SavedOption {
     private boolean guaranteed;
 
     /** JSONB column — stored as raw JSON string. */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String promo;
 
@@ -59,10 +62,12 @@ public class SavedOption {
     private String aiRecommendation;
 
     /** JSONB column — stored as raw JSON string. */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String breakdown;
 
     /** JSONB column — stored as raw JSON string. */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String details;
 
