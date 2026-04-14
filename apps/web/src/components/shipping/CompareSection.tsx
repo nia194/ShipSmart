@@ -1,156 +1,393 @@
-import { ShippingService } from "@/lib/shipping-data";
-import { Logo } from "./Logo";
+/**
+ * CompareSection — one unified comparison component.
+ *
+ * Layout (single card, one grid):
+ *   Row 1  · Option header per column (logo + service name + price)
+ *   Row 2  · LLM-generated insight copy, directly under each column
+ *   Group  · AT A GLANCE  — Price, Speed, Reliability
+ *   Group  · DETAILS      — Insurance, Tracking, Handling
+ *
+ * Columns in the table match the option columns at the top exactly —
+ * no redundant second header with logos.
+ */
 
-interface CompareSectionProps {
-  selectedServices: ShippingService[];
-  onRemove: (serviceId: string) => void;
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  CompareRequest,
+  CompareResponse,
+  Priority,
+  CompareOption,
+  ComparisonDimension,
+  OptionInsight,
+} from "./compare.types";
+import { postCompare } from "./compare.api";
+import { Logo } from "./Logo";
+import styles from "./CompareSection.module.css";
+
+const ANCHOR_DIMENSIONS = ["Price", "Speed", "Reliability"];
+const SPEC_DIMENSIONS = ["Insurance", "Tracking", "Handling"];
+
+function cleanName(carrier: string, serviceName: string): string {
+  if (serviceName.startsWith(carrier + " ")) {
+    return serviceName.slice(carrier.length + 1);
+  }
+  return serviceName;
 }
 
-export const CompareSection = ({ selectedServices, onRemove }: CompareSectionProps) => {
-  if (selectedServices.length < 2) return null;
+function displayName(carrier: string, serviceName: string): string {
+  return `${carrier} ${cleanName(carrier, serviceName)}`;
+}
 
-  const cols = selectedServices.length;
-  const colWidth = 100 / cols;
+export interface CompareSectionProps {
+  shipment: {
+    item_description: string;
+    origin_zip: string;
+    destination_zip: string;
+    deadline_date: string;
+    weight_lb: number;
+  };
+  allOptions: CompareOption[];
+  selectedPriority: Priority;
+}
+
+type CompareState = {
+  optionIds: string[];
+  data: CompareResponse | null;
+  isLoading: boolean;
+  error: string | null;
+};
+
+const LoadingSkeleton: React.FC = () => (
+  <div className={styles.unifiedCard} style={{ animation: "fadeUp .3s both" }}>
+    <div className={styles.grid} style={{ "--col-count": 3 } as React.CSSProperties}>
+      <div />
+      {[1, 2, 3].map((i) => (
+        <div key={i} className={styles.optionHeader}>
+          <div className={styles.skeleton} style={{ width: 32, height: 32, borderRadius: 8, marginBottom: 10 }} />
+          <div className={styles.skeleton} style={{ width: "80%", height: 12, marginBottom: 8 }} />
+          <div className={styles.skeleton} style={{ width: "55%", height: 22 }} />
+        </div>
+      ))}
+      <div />
+      {[1, 2, 3].map((i) => (
+        <div key={i} className={styles.insightCell}>
+          <div className={styles.skeleton} style={{ width: "100%", height: 10, marginBottom: 6 }} />
+          <div className={styles.skeleton} style={{ width: "88%", height: 10, marginBottom: 6 }} />
+          <div className={styles.skeleton} style={{ width: "72%", height: 10 }} />
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+export const CompareSection: React.FC<CompareSectionProps> = ({
+  shipment,
+  allOptions,
+  selectedPriority,
+}) => {
+  const [state, setState] = useState<CompareState>(() => {
+    const initialIds = selectDefaultOptions(allOptions);
+    return { optionIds: initialIds, data: null, isLoading: true, error: null };
+  });
+
+  const allOptionKey = useMemo(
+    () => allOptions.map((o) => o.id).sort().join(","),
+    [allOptions]
+  );
+
+  const prevOptionKeyRef = React.useRef(allOptionKey);
+  useEffect(() => {
+    if (prevOptionKeyRef.current !== allOptionKey) {
+      prevOptionKeyRef.current = allOptionKey;
+      const newIds = selectDefaultOptions(allOptions);
+      setState({ optionIds: newIds, data: null, isLoading: true, error: null });
+    }
+  }, [allOptionKey, allOptions]);
+
+  useEffect(() => {
+    const fetchCompare = async () => {
+      setState((prev) => ({ ...prev, isLoading: true, error: null }));
+
+      const selectedOpts = allOptions.filter((o) => state.optionIds.includes(o.id));
+      if (selectedOpts.length < 2) {
+        setState((prev) => ({ ...prev, isLoading: false, error: "Need at least 2 options to compare" }));
+        return;
+      }
+
+      try {
+        const request: CompareRequest = {
+          shipment,
+          option_ids: state.optionIds,
+          options: selectedOpts,
+          selected_priority: selectedPriority,
+        };
+        const response = await postCompare(request);
+        setState((prev) => ({ ...prev, data: response, isLoading: false }));
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to load comparison";
+        setState((prev) => ({ ...prev, isLoading: false, error: message }));
+      }
+    };
+    fetchCompare();
+  }, [state.optionIds, shipment, allOptions, selectedPriority]);
+
+  const handleRemoveOption = useCallback((optionId: string) => {
+    setState((prev) => {
+      const newIds = prev.optionIds.filter((id) => id !== optionId);
+      if (newIds.length < 2) return prev;
+      return { ...prev, optionIds: newIds };
+    });
+  }, []);
+
+  const handleAddOption = useCallback((optionId: string) => {
+    setState((prev) => {
+      if (prev.optionIds.length >= 3 || prev.optionIds.includes(optionId)) return prev;
+      return { ...prev, optionIds: [...prev.optionIds, optionId] };
+    });
+  }, []);
+
+  const remainingOptions = useMemo(
+    () => allOptions.filter((o) => !state.optionIds.includes(o.id)),
+    [allOptions, state.optionIds]
+  );
+
+  const selectedOptions = useMemo(
+    () => allOptions.filter((o) => state.optionIds.includes(o.id)),
+    [allOptions, state.optionIds]
+  );
+
+  const activeScenario = state.data?.scenarios[selectedPriority];
+
+  const insightsById = useMemo(() => {
+    const map: Record<string, OptionInsight> = {};
+    activeScenario?.option_insights.forEach((ins) => { map[ins.option_id] = ins; });
+    return map;
+  }, [activeScenario]);
+
+  const { anchors, specs } = useMemo(() => {
+    const dims = activeScenario?.comparison_dimensions ?? [];
+    return {
+      anchors: ANCHOR_DIMENSIONS
+        .map((n) => dims.find((d) => d.dimension === n))
+        .filter((d): d is ComparisonDimension => Boolean(d)),
+      specs: SPEC_DIMENSIONS
+        .map((n) => dims.find((d) => d.dimension === n))
+        .filter((d): d is ComparisonDimension => Boolean(d)),
+    };
+  }, [activeScenario]);
+
+  if (!state.data && !state.isLoading) return null;
+
+  const canShowAddSlot = selectedOptions.length < 3 && remainingOptions.length > 0;
+  const colCount = selectedOptions.length + (canShowAddSlot ? 1 : 0);
 
   return (
-    <div style={{ marginTop: 32, marginBottom: 20, animation: "fadeUp .3s both" }}>
-      <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-        <span>📊</span>Compare {selectedServices.length} Services
-      </div>
+    <div className={styles.container}>
+      <div className={styles.sectionTitle}>Compare Service Options</div>
 
-      <div style={{ borderRadius: 14, overflow: "hidden", border: "1.5px solid #eeeff1", background: "#fff" }}>
-        {/* Header Row */}
-        <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 0, borderBottom: "1.5px solid #f0f0f2" }}>
-          {selectedServices.map((svc) => (
-            <div key={svc.id} style={{ padding: "16px 14px", textAlign: "center", borderRight: svc.id !== selectedServices[selectedServices.length - 1].id ? "1px solid #f0f0f2" : "none" }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                <Logo name={svc.carrier} sz={28} />
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: "#111827", marginBottom: 2 }}>{svc.name}</div>
-                  <div style={{ fontSize: 10, color: "#9ca3af" }}>{svc.carrier}</div>
-                </div>
-                <button
-                  onClick={() => onRemove(svc.id)}
-                  style={{
-                    marginTop: 4,
-                    padding: "3px 8px",
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: "#dc2626",
-                    background: "#fef2f2",
-                    border: "1px solid #fecaca",
-                    borderRadius: 6,
-                    cursor: "pointer",
-                    fontFamily: "'Outfit',sans-serif",
-                  }}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+      {state.data && (
+        <div className={styles.contextStrip}>{state.data.shipment_summary}</div>
+      )}
 
-        {/* Comparison Rows */}
-        {[
-          {
-            label: "Service Tier",
-            getValue: (s: ShippingService) => s.tier,
-          },
-          {
-            label: "Price",
-            getValue: (s: ShippingService) => (
-              <>
-                {s.originalPrice && <div style={{ fontSize: 10, color: "#9ca3af", textDecoration: "line-through" }}>${s.originalPrice}</div>}
-                <div style={{ fontSize: 16, fontWeight: 800, color: "#111827" }}>${s.price}</div>
-              </>
-            ),
-          },
-          {
-            label: "Delivery Time",
-            getValue: (s: ShippingService) => (
-              <>
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#111827" }}>{s.transitDays}d</div>
-                <div style={{ fontSize: 10, color: "#9ca3af" }}>{s.date}</div>
-              </>
-            ),
-          },
-          {
-            label: "Guaranteed",
-            getValue: (s: ShippingService) => (
-              <div style={{ fontSize: 12, color: s.guaranteed ? "#15803d" : "#9ca3af", fontWeight: s.guaranteed ? 700 : 500 }}>
-                {s.guaranteed ? "✓ Yes" : "—"}
-              </div>
-            ),
-          },
-          {
-            label: "Promo",
-            getValue: (s: ShippingService) =>
-              s.promo ? (
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#15803d" }}>{s.promo.pct} OFF</div>
-                  <div style={{ fontSize: 9, color: "#9ca3af" }}>Save ${s.promo.save}</div>
-                </div>
-              ) : (
-                <div style={{ color: "#9ca3af" }}>—</div>
-              ),
-          },
-          {
-            label: "Features",
-            getValue: (s: ShippingService) =>
-              s.features.length > 0 ? (
-                <div style={{ display: "flex", gap: 3, flexWrap: "wrap", justifyContent: "center" }}>
-                  {s.features.slice(0, 2).map((f) => (
-                    <span
-                      key={f}
-                      style={{
-                        padding: "2px 6px",
-                        borderRadius: 4,
-                        background: "#f0f5ff",
-                        color: "#0071e3",
-                        fontSize: 9,
-                        fontWeight: 600,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {f}
-                    </span>
-                  ))}
-                  {s.features.length > 2 && (
-                    <span style={{ fontSize: 9, color: "#9ca3af", fontWeight: 600 }}>+{s.features.length - 2}</span>
-                  )}
-                </div>
-              ) : (
-                <div style={{ color: "#9ca3af" }}>—</div>
-              ),
-          },
-        ].map((row, idx) => (
-          <div key={row.label} style={{ display: "grid", gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: 0, borderBottom: idx < 4 ? "1px solid #f0f0f2" : "none" }}>
-            <div style={{ padding: "12px 14px", gridColumn: "1 / -1", fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", background: "#f9fafb" }}>
-              {row.label}
-            </div>
-            {selectedServices.map((svc) => (
-              <div
-                key={svc.id}
-                style={{
-                  padding: "12px 14px",
-                  textAlign: "center",
-                  fontSize: 13,
-                  color: "#374151",
-                  borderRight: svc.id !== selectedServices[selectedServices.length - 1].id ? "1px solid #f0f0f2" : "none",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  alignItems: "center",
-                  gap: 2,
-                }}
-              >
-                {typeof row.getValue(svc) === "string" ? row.getValue(svc) : row.getValue(svc)}
-              </div>
+      {state.isLoading ? (
+        <LoadingSkeleton />
+      ) : state.data && activeScenario ? (
+        <div className={styles.unifiedCard}>
+          <div
+            className={styles.grid}
+            style={{ "--col-count": colCount } as React.CSSProperties}
+          >
+            {/* Row: option headers (logo + name + price) */}
+            <div className={styles.cornerCell} />
+            {selectedOptions.map((opt) => (
+              <OptionHeaderCell
+                key={opt.id}
+                option={opt}
+                canRemove={selectedOptions.length > 2}
+                onRemove={handleRemoveOption}
+              />
             ))}
+            {canShowAddSlot && (
+              <AddCarrierCell
+                remainingOptions={remainingOptions}
+                onAdd={handleAddOption}
+              />
+            )}
+
+            {/* Row: insight copy under each option */}
+            <div className={styles.cornerCell} />
+            {selectedOptions.map((opt) => (
+              <InsightCell key={opt.id} insight={insightsById[opt.id]} />
+            ))}
+            {canShowAddSlot && <div className={styles.insightCell} />}
+
+            {/* Group: At a glance */}
+            {anchors.length > 0 && (
+              <DimensionGroup
+                title="At a glance"
+                dims={anchors}
+                options={selectedOptions}
+                hasAddSlot={canShowAddSlot}
+              />
+            )}
+
+            {/* Group: Details */}
+            {specs.length > 0 && (
+              <DimensionGroup
+                title="Details"
+                dims={specs}
+                options={selectedOptions}
+                hasAddSlot={canShowAddSlot}
+              />
+            )}
           </div>
-        ))}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 };
+
+const OptionHeaderCell: React.FC<{
+  option: CompareOption;
+  canRemove: boolean;
+  onRemove: (id: string) => void;
+}> = ({ option, canRemove, onRemove }) => (
+  <div className={styles.optionHeader}>
+    <button
+      className={styles.removeBtn}
+      onClick={() => onRemove(option.id)}
+      disabled={!canRemove}
+      aria-label={`Remove ${option.carrier} from comparison`}
+      title={!canRemove ? "Keep at least 2 options" : "Remove"}
+    >
+      ×
+    </button>
+    <Logo name={option.carrier} sz={34} />
+    <div className={styles.optionName}>
+      {displayName(option.carrier, option.service_name)}
+    </div>
+    <div className={styles.optionPrice}>${option.price_usd.toFixed(2)}</div>
+  </div>
+);
+
+const AddCarrierCell: React.FC<{
+  remainingOptions: CompareOption[];
+  onAdd: (id: string) => void;
+}> = ({ remainingOptions, onAdd }) => (
+  <div className={styles.addCell}>
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className={styles.addBtn}>+ Add carrier</button>
+      </PopoverTrigger>
+      <PopoverContent className={styles.popoverContent} align="start">
+        {remainingOptions.map((opt) => (
+          <div key={opt.id} className={styles.popoverItem} onClick={() => onAdd(opt.id)}>
+            {displayName(opt.carrier, opt.service_name)}
+          </div>
+        ))}
+      </PopoverContent>
+    </Popover>
+  </div>
+);
+
+const InsightCell: React.FC<{ insight: OptionInsight | undefined }> = ({ insight }) => {
+  if (!insight) return <div className={styles.insightCell} />;
+  return (
+    <div className={styles.insightCell}>
+      {insight.role_label && (
+        <div className={styles.insightRole}>{insight.role_label}</div>
+      )}
+      {insight.strength && (
+        <p className={styles.insightParagraph}>{insight.strength}</p>
+      )}
+      {insight.consideration && (
+        <p className={styles.insightParagraph}>{insight.consideration}</p>
+      )}
+      {(insight.choose_when || insight.skip_when) && (
+        <div className={styles.insightGuidance}>
+          {insight.choose_when && (
+            <div className={styles.guidanceRow}>
+              <span className={styles.guidanceCheck}>✓</span>
+              <span>{insight.choose_when}</span>
+            </div>
+          )}
+          {insight.skip_when && (
+            <div className={styles.guidanceRow}>
+              <span className={styles.guidanceSkip}>✗</span>
+              <span>{insight.skip_when}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const DimensionGroup: React.FC<{
+  title: string;
+  dims: ComparisonDimension[];
+  options: CompareOption[];
+  hasAddSlot: boolean;
+}> = ({ title, dims, options, hasAddSlot }) => (
+  <>
+    <div className={styles.groupHeader}>
+      <div className={styles.groupTitle}>{title}</div>
+    </div>
+    {dims.map((dim) => (
+      <React.Fragment key={dim.dimension}>
+        <div className={styles.rowLabel}>{dim.dimension}</div>
+        {options.map((opt) => {
+          const isWinner = dim.winner_id === opt.id;
+          return (
+            <div
+              key={opt.id}
+              className={`${styles.cell} ${isWinner ? styles.cellWinner : ""}`}
+            >
+              {dim.values[opt.id] || "\u2014"}
+            </div>
+          );
+        })}
+        {hasAddSlot && <div className={styles.cell} />}
+      </React.Fragment>
+    ))}
+  </>
+);
+
+function selectDefaultOptions(allOptions: CompareOption[]): string[] {
+  if (allOptions.length < 2) return allOptions.map((o) => o.id);
+
+  const selected: string[] = [];
+
+  const publicOptions = allOptions.filter(
+    (o) => o.carrier_type === "public" || o.carrier === "USPS"
+  );
+  if (publicOptions.length > 0) {
+    selected.push(
+      publicOptions.reduce((prev, curr) => (curr.price_usd < prev.price_usd ? curr : prev)).id
+    );
+  }
+
+  const privateOptions = allOptions.filter(
+    (o) => o.carrier_type === "private" && !selected.includes(o.id) &&
+      (o.carrier === "UPS" || o.carrier === "FedEx" || o.carrier === "DHL")
+  );
+  if (privateOptions.length > 0) {
+    selected.push(
+      privateOptions.reduce((prev, curr) =>
+        curr.arrival_date < prev.arrival_date ||
+        (curr.arrival_date === prev.arrival_date && curr.price_usd < prev.price_usd)
+          ? curr : prev
+      ).id
+    );
+  }
+
+  const remaining = allOptions.filter((o) => !selected.includes(o.id));
+  if (remaining.length > 0 && selected.length < 3) {
+    selected.push(
+      remaining.reduce((prev, curr) => (curr.price_usd < prev.price_usd ? curr : prev)).id
+    );
+  }
+
+  return selected;
+}
