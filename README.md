@@ -212,3 +212,4 @@ Apply with `supabase db push` (requires the Supabase CLI and a linked project).
 - Add ADRs in `docs/adr/` for significant architectural decisions.
 - Use TODO markers for unimplemented features: `// TODO: description`
 - Do not add fake business logic — use clear placeholders.
+- .env and .md files for each sub-folder for service owner are directly put in the Render.
