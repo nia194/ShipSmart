@@ -21,7 +21,8 @@ export function useShippingQuotes() {
     packages: PackageItem[]
   ) => {
     setLoading(true);
-    setData(null);
+    // Don't clear data on re-fetch — keep old results visible during refresh
+    // so CompareSection stays mounted. First load starts with data=null anyway.
 
     try {
       let result: QuoteResults;

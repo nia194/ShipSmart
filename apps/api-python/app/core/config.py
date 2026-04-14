@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     # ── Rate limiting ────────────────────────────────────────────────────────
     rate_limit_advisor: str = "10/minute"
     rate_limit_orchestration: str = "20/minute"
+    rate_limit_compare: str = "10/minute"
 
     # ── Providers ────────────────────────────────────────────────────────────
     shipping_provider: str = "mock"  # "mock", "ups", "fedex", "dhl", "usps"
