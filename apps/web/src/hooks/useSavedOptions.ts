@@ -106,8 +106,9 @@ export function useSavedOptions() {
         }
         setSavedOptions(prev => prev.filter(s => s.id !== option.id));
         toast({ title: "Removed", description: `${svc.name} removed from saved.` });
-      } catch {
-        toast({ title: "Error", description: "Failed to remove.", variant: "destructive" });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "Failed to remove.";
+        toast({ title: "Error", description: errMsg, variant: "destructive" });
       }
     } else {
       // save
@@ -145,7 +146,7 @@ export function useSavedOptions() {
           });
           if (!res.ok) {
             const err = await res.json().catch(() => ({ error: res.statusText }));
-            throw new Error(err.error || "Failed to save");
+            throw new Error(err.error || `HTTP ${res.status}: Failed to save`);
           }
           saved = await res.json();
         } else {
@@ -156,8 +157,10 @@ export function useSavedOptions() {
 
         setSavedOptions(prev => [saved, ...prev]);
         toast({ title: "Saved!", description: `${svc.name} saved.` });
-      } catch {
-        toast({ title: "Error", description: "Failed to save.", variant: "destructive" });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : "Failed to save.";
+        console.error("Save failed:", err);
+        toast({ title: "Error", description: errMsg, variant: "destructive" });
       }
     }
   };

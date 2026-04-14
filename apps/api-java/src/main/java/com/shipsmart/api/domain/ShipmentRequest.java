@@ -1,6 +1,8 @@
 package com.shipsmart.api.domain;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.time.LocalDate;
@@ -34,6 +36,7 @@ public class ShipmentRequest {
     private LocalDate expectedDeliveryDate;
 
     /** Stored as JSONB in Postgres. We persist the raw JSON string. */
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb", nullable = false)
     private String packages;
 
