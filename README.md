@@ -1,4 +1,26 @@
-# ShipSmart Monorepo
+# ShipSmart Monorepo (Archived)
+
+> **This repository has been archived and is no longer maintained.**
+>
+> The monorepo has been split into four independent, production-deployed repositories:
+>
+> | Repository | Description | Render Service |
+> |---|---|---|
+> | [ShipSmart-Web](https://github.com/NimeshArora/ShipSmart-Web) | React frontend (Vite + TypeScript + shadcn/ui) | `shipsmart-web` |
+> | [ShipSmart-Orchestrator](https://github.com/NimeshArora/ShipSmart-Orchestrator) | Spring Boot backend (transactional APIs) | `shipsmart-api-java` |
+> | [ShipSmart-API](https://github.com/NimeshArora/ShipSmart-API) | FastAPI backend (AI/RAG/MCP tools) | `shipsmart-api-python`, `shipsmart-mcp-tools` |
+> | [ShipSmart-Infra](https://github.com/NimeshArora/ShipSmart-Infra) | Supabase migrations, docs, scripts, runbooks | — |
+>
+> All future development, issues, and deployments happen in those repositories.
+> This repo is preserved as a historical reference only.
+
+---
+
+*The original README follows below for reference.*
+
+---
+
+# ShipSmart Monorepo (Original)
 
 Polyglot monorepo for the ShipSmart shipping comparison and management platform.
 
