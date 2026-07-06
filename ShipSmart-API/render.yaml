@@ -1,0 +1,105 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ShipSmart-API — Render Blueprint
+# FastAPI AI/advisory service. Tool execution is delegated to the standalone
+# ShipSmart-MCP service (deployed from the ShipSmart-MCP repo) — see
+# SHIPSMART_MCP_URL below.
+#
+# BEFORE DEPLOYING: Set all sync:false env vars in the Render dashboard.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── FastAPI Python API (AI/advisory: RAG, recommendations, advisors) ───────
+  - type: web
+    name: shipsmart-api-python
+    env: python
+    buildCommand: pip install uv && uv sync
+    startCommand: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: INFO
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://shipsmart-web.onrender.com
+      - key: INTERNAL_JAVA_API_URL
+        value: https://shipsmart-api-java.onrender.com
+      # ── Vector Store (RAG persistence — pgvector for production) ──────────
+      - key: VECTOR_STORE_TYPE
+        value: pgvector
+      - key: DATABASE_URL
+        sync: false
+        # Set in Render dashboard to Supabase async PostgreSQL URL:
+        # postgresql://postgres.ref:pass@ref.pooler.supabase.com:6543/postgres?sslmode=require
+      - key: PGVECTOR_TABLE
+        value: rag_chunks
+      # ── LLM Provider ──────────────────────────────────────────────────────
+      - key: LLM_PROVIDER
+        value: openai
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.0-flash
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_MODEL
+        value: claude-sonnet-4-5
+      # ── Task-based LLM Routing ────────────────────────────────────────────
+      - key: LLM_PROVIDER_REASONING
+        value: openai
+      - key: LLM_PROVIDER_SYNTHESIS
+        value: openai
+      - key: LLM_PROVIDER_FALLBACK
+        value: echo
+      # ── Embeddings ────────────────────────────────────────────────────────
+      - key: EMBEDDING_PROVIDER
+        value: openai
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: EMBEDDING_DIMENSIONS
+        value: "1536"
+      - key: RATE_LIMIT_ADVISOR
+        value: 10/minute
+      - key: RATE_LIMIT_ORCHESTRATION
+        value: 20/minute
+      - key: RATE_LIMIT_COMPARE
+        value: 10/minute
+      # ── RAG / Knowledge Base ──────────────────────────────────────────────
+      - key: RAG_AUTO_INGEST
+        value: "true"
+      - key: RAG_DOCUMENTS_PATH
+        value: data/documents
+      - key: RAG_TOP_K
+        value: "3"
+      - key: RAG_CHUNK_SIZE
+        value: "500"
+      - key: RAG_CHUNK_OVERLAP
+        value: "50"
+      # ── Conversational Concierge (setup assistant + durable recall) ───────
+      # Gates POST /api/v1/concierge/chat (404 when false). The Web homepage
+      # mounts the concierge by default, so this must be "true" in production.
+      - key: CONCIERGE_ENABLED
+        value: "true"
+      # Durable cross-reload recall. "postgres" uses DATABASE_URL above and
+      # REQUIRES the conversations migration applied to Supabase
+      # (supabase/migrations/20260626120000_create_conversations.sql). Use
+      # "memory" to disable persistence (recall lost on instance restart).
+      - key: CONVERSATION_STORE
+        value: postgres
+      - key: CONVERSATION_MAX_MESSAGES
+        value: "50"
+      # Multi-agent compliance/workflow bridge — OFF by default (functional when
+      # flipped to "true"); also gates POST /api/v1/workflow/*.
+      - key: WORKFLOW_ENABLED
+        value: "false"
+      # ── ShipSmart MCP (tool server) ───────────────────────────────────────
+      - key: SHIPSMART_MCP_URL
+        value: https://shipsmart-mcp.onrender.com
+      - key: SHIPSMART_MCP_API_KEY
+        sync: false

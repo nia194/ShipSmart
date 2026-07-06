@@ -61,6 +61,12 @@ BLOCK-*.md
 DEPLOYMENT_*.md
 ENV_VARS_*.md
 
+# ─── Live component repositories (maintainer-local mounts) ─────────────────────
+# Each dev/<component> is an independent git repo with its own origin; the
+# tracked mirrors at the repo root are promoted from them by
+# scripts/sync-components.sh.
+/dev/
+
 # ─── MCP config (push to Render manually) ─────────────────────────────────────
 .mcp.json
 

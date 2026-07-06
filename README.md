@@ -1,237 +1,110 @@
-# ShipSmart Monorepo (Archived)
+# ShipSmart
 
-> **This repository has been archived and is no longer maintained.**
->
-> The monorepo has been split into four independent, production-deployed repositories:
->
-> | Repository | Description | Render Service |
-> |---|---|---|
-> | [ShipSmart-Web](https://github.com/NimeshArora/ShipSmart-Web) | React frontend (Vite + TypeScript + shadcn/ui) | `shipsmart-web` |
-> | [ShipSmart-Orchestrator](https://github.com/NimeshArora/ShipSmart-Orchestrator) | Spring Boot backend (transactional APIs) | `shipsmart-api-java` |
-> | [ShipSmart-API](https://github.com/NimeshArora/ShipSmart-API) | FastAPI backend (AI/RAG/MCP tools) | `shipsmart-api-python`, `shipsmart-mcp-tools` |
-> | [ShipSmart-Infra](https://github.com/NimeshArora/ShipSmart-Infra) | Supabase migrations, docs, scripts, runbooks | — |
->
-> All future development, issues, and deployments happen in those repositories.
-> This repo is preserved as a historical reference only.
+**A shipping search and comparison platform with an AI copilot** — compare real carrier quotes, get grounded shipping advice with citations, fill the shipment form by chatting, run compliance checks, and route risky cases through a human-reviewable multi-agent workflow. Built as six focused services that develop and deploy independently and are verified together by a cross-repo test harness.
+
+This repository is the **system view**: a read-only aggregate of the six component repositories, promoted here at stable milestones. Active development happens in the component repos; every mirror directory below equals its repo's `main` at the exact commit recorded in [`COMPONENTS.yml`](./COMPONENTS.yml).
 
 ---
 
-*The original README follows below for reference.*
+## Table of contents
+
+- [What the product does](#what-the-product-does)
+- [Architecture](#architecture)
+- [Components](#components)
+- [Cross-cutting engineering](#cross-cutting-engineering)
+- [Repository model](#repository-model)
+- [Running the system](#running-the-system)
+- [Where it is heading](#where-it-is-heading)
+- [License](#license)
 
 ---
 
-# ShipSmart Monorepo (Original)
+## What the product does
 
-Polyglot monorepo for the ShipSmart shipping comparison and management platform.
-
-**Stack:** React 19 · Spring Boot 4.0.5 · FastAPI 0.135.3 · Supabase Postgres · Render
-
----
-
-## Repository Structure
-
-```
-ShipSmart/
-├── apps/
-│   ├── web/                  React frontend (Vite + TypeScript + shadcn/ui)
-│   ├── api-java/             Spring Boot backend (core transactional APIs)
-│   └── api-python/           FastAPI backend (AI/orchestration workflows)
-├── packages/
-│   └── shared/               Shared TypeScript types (used by apps/web)
-├── supabase/
-│   ├── config.toml           Supabase project config
-│   └── migrations/           SQL migrations (copy from Lovable project)
-├── infra/
-│   └── scripts/              Local dev scripts
-├── docs/
-│   ├── architecture.md       System design overview
-│   ├── service-boundaries.md  Who owns what
-│   ├── migration-from-lovable.md  Migration guide
-│   ├── deployment-render.md  Render deployment guide
-│   ├── migration-checklist.md Ordered migration steps
-│   └── adr/                  Architecture Decision Records
-├── nx.json                   Nx workspace config
-├── package.json              Root pnpm workspace
-├── pnpm-workspace.yaml       pnpm workspace definition
-├── render.yaml               Render blueprint (3 services)
-└── tsconfig.base.json        Shared TypeScript config
-```
-
----
+| Capability | How |
+|---|---|
+| **Quote search & comparison** | Submit a shipment, get carrier service quotes (real FedEx Rate API integration, sandbox by default, plus mock providers behind one `QuoteProvider` seam), compared with scored ranking and per-option insights. |
+| **Saved options & analytics** | Authenticated CRUD on saved shipping options, with per-user groupings — carriers, tiers, price top-N, route frequency. |
+| **Booking hand-off** | Idempotent carrier booking redirect with tracking, backed by stored quote data — never by model output. |
+| **Grounded shipping advisor** | Shipment-scoped Q&A over a curated 19-document corpus (compliance, carrier, packaging, customs guides) with citations, provenance badges, and explicit refusal when the corpus can't support an answer. |
+| **Conversational concierge** | Multi-turn chat that fills the shipment form: extracted slots patch a shared draft the form and chat both edit, with "from chat" provenance and conflict confirmation. |
+| **Compliance checks** | Restricted/prohibited-item and destination checks over the same corpus (UC2), surfaced as explicit verdicts. |
+| **Multi-agent workflow** | A shipment run through specialist agents that can suspend on unverified high-risk areas for a human reviewer to clear or block (UC3/UC4). |
+| **MCP tools** | `validate_address` and `get_quote_preview` exposed over MCP/HTTP for any MCP-capable client — read-only by enforced policy. |
 
 ## Architecture
 
 ```
-Browser (React SPA)
-    ├── → apps/api-java  (Spring Boot)  — shipments, quotes, saved options, bookings
-    └── → apps/api-python (FastAPI)     — RAG, advisors, tool orchestration, LLM routing
-                   │                          │
-                   │                          └── (optional) → Java API for quote hydration
-                   ↓                          ↓
-           Supabase Postgres (auth + transactional data + pgvector RAG store)
+                ┌─────────────────────────────────────────────┐
+                │            ShipSmart-Web · React SPA        │
+                └──────────────┬───────────────────┬──────────┘
+                               │  Bearer Supabase JWT          │
+                               ▼                               ▼
+     ┌──────────────────────────────┐        ┌──────────────────────────────┐
+     │   ShipSmart-Orchestrator     │◀───────│         ShipSmart-API        │
+     │   Java / Spring Boot         │        │       Python / FastAPI       │
+     │   SOLE writer to Postgres    │        │  RAG · advisors · concierge  │
+     │   quotes · bookings · saved  │        │  compliance · workflow · LLM │
+     └──────────────┬───────────────┘        └──────────────┬───────────────┘
+                    │                                       ▼
+                    ▼                        ┌──────────────────────────────┐
+     ┌──────────────────────────────┐        │        ShipSmart-MCP         │
+     │  Supabase Postgres + Auth    │        │  shipping tools (HTTP/MCP)   │
+     └──────────────────────────────┘        └──────────────────────────────┘
+            ShipSmart-Infra: migrations · edge functions · deploy configs
+            ShipSmart-Test: cross-repo contract suite · live e2e harness
 ```
 
-- **Java** owns core transactional data. Single writer for shipments/quotes/options.
-- **Python** handles AI workflows: RAG retrieval, shipping/tracking advisors, recommendation scoring, tool orchestration, multi-provider LLM routing. It does not own DB tables, but it *reads* a `rag_chunks` pgvector table for persistent retrieval.
-- **Supabase** is the database, auth provider, and pgvector host.
-- **Frontend → both backends directly** (no API gateway).
-- **Python → Java**: optional internal HTTP call to hydrate recommendations from real Java-side quotes by `shipment_request_id`.
+**Ownership rules the system is built on:**
 
-### AI / RAG capabilities (api-python)
+- **Java is the single writer.** Every transactional fact (quotes, bookings, saved options, shipments) is created and validated by the Orchestrator; the Python service reads through it over internal HTTP and never touches the database directly.
+- **Deterministic decisions, generative explanations.** Scoring, ranking, compliance verdicts, and routing are code; the LLM extracts fuzzy intent and writes concise explanations. No model output creates a price, a booking, or a form mutation on its own.
+- **The AI boundary is the FastAPI service.** Prompt assembly, injection detection, untrusted-data fencing, grounding/refusal, and decision-tag tracing live in one guardrail funnel that every prompt flows through.
+- **Tools are contained.** Model-initiated actions execute only through the MCP server's schema-validated, allowlisted, read-only tool registry — the model never calls carriers directly.
+- **Graceful degradation.** Carrier fallback paths (legacy Supabase edge functions), LLM provider failover down to a keyless echo mode, and advisor errors that never affect the quote/booking path.
 
-- **Multi-provider LLM router**: OpenAI, Anthropic Claude, Google Gemini, Llama via Ollama, Echo fallback. Per-task routing (`reasoning`, `synthesis`, `fallback`).
-- **RAG pipeline**: pluggable embeddings (OpenAI / local hash placeholder) + pluggable vector store (in-memory or **Postgres + pgvector**). Auto-ingest on first boot.
-- **Tool orchestration**: in-process tool registry (`validate_address`, `get_quote_preview`). Selection is deterministic (regex) with **LLM-assisted fallback** for natural-language queries.
-- **Advisors**: shipping advisor and tracking advisor combine RAG context + tool results + LLM reasoning into structured responses.
-- **Recommendation engine**: deterministic scoring (cheapest / fastest / best_value / balanced) with optional LLM summary; can hydrate inputs from the Java API.
-- **Hardening**: per-IP rate limiting (slowapi), TTL caches, loud startup warnings when degraded modes (mock provider, hash embeddings, echo LLM) are active.
+## Components
 
-See `apps/api-python/README.md` for the full FastAPI service docs and `docs/` (gitignored, local-only study notes) for the deeper architectural narrative.
+| Directory | Repository | Role | Stack | Verified tests |
+|---|---|---|---|---|
+| [`ShipSmart-Web/`](./ShipSmart-Web) | [repo](https://github.com/nia194/ShipSmart-Web) | React SPA — comparison UI, concierge chat, advisor, workflow page | React 19 · Vite · TS · Tailwind/shadcn · TanStack Query | 58 unit/component + browser smoke |
+| [`ShipSmart-Orchestrator/`](./ShipSmart-Orchestrator) | [repo](https://github.com/nia194/ShipSmart-Orchestrator) | Transactional API — single Postgres writer, carrier integration, provider registry + metrics | Spring Boot 3.4 · Java 17 · JPA · Flyway (validate) · Caffeine · Bucket4j | 88 (81 run, 7 Docker-gated) |
+| [`ShipSmart-API/`](./ShipSmart-API) | [repo](https://github.com/nia194/ShipSmart-API) | AI/orchestration — RAG (pgvector/hybrid), advisors, concierge agent, compliance, workflow, multi-provider LLM router | FastAPI · Python 3.13 · uv · pgvector | 445 hermetic, no keys |
+| [`ShipSmart-MCP/`](./ShipSmart-MCP) | [repo](https://github.com/nia194/ShipSmart-MCP) | MCP tool server — address validation + quote preview over 5 pluggable shipping providers | FastAPI + MCP · Python 3.13 | 95 |
+| [`ShipSmart-Infra/`](./ShipSmart-Infra) | [repo](https://github.com/nia194/ShipSmart-Infra) | Supabase migrations + edge functions, Render deploy configs, infra invariants validator, dev scripts | Supabase · Deno · Bash | invariant validator |
+| [`ShipSmart-Test/`](./ShipSmart-Test) | [repo](https://github.com/nia194/ShipSmart-Test) | Cross-repo harness — contract suite over the five siblings' sources, live e2e against the boot-anything stack script, cross-service Postman collection | Python 3.13 · pytest · newman | 25 contract + 32 e2e |
 
----
+## Cross-cutting engineering
 
-## Local Development
+- **Contracts, verified in CI.** ShipSmart-Test parses sibling sources as text and asserts the cross-boundary shapes line up — TypeScript types ↔ Pydantic schemas ↔ Java DTOs ↔ MCP tool schemas ↔ SQL function signatures — without booting five applications. Its CI checks out all six repos and runs the suite on every change.
+- **Hermetic, keyless CI everywhere.** Echo/scripted LLM clients, mock shipping providers, in-memory vector store — every repo's suite runs green with zero external credentials.
+- **AI guardrails as code.** Centralized prompt assembly, regex + heuristic injection detection, fenced untrusted data, grounded-or-refuse answers (`SAFE_REFUSAL`), output leakage checks, and `decisions[]` audit tags on every response.
+- **Transactional integrity.** Idempotency keys on writes, ETag/`If-Match` optimistic concurrency, per-IP rate limiting, soft deletes, request-correlation IDs propagated from the browser through every service.
+- **LLM provider strategy.** One router across OpenAI / Anthropic / Gemini / Ollama with task-based routing and failover, plus a scripted keyless client so demos and CI run the full agent loop with no API keys.
+- **Operational surface.** Spring Actuator + Prometheus endpoint, provider call metrics with ring-buffer history (`GET /api/v1/providers/metrics`), health probes on every service, W3C trace headers minted at the edge.
 
-### Prerequisites
+## Repository model
 
-| Tool     | Version      | Install                                           |
-|----------|--------------|---------------------------------------------------|
-| Node.js  | 20+          | [nodejs.org](https://nodejs.org)                  |
-| pnpm     | 9+           | `npm install -g pnpm`                             |
-| Java     | 25           | SDKMAN: `sdk install java 25-open`                |
-| Python   | 3.13         | `pyenv install 3.13` or system installer          |
-| uv       | 0.6.5+       | `curl -LsSf https://astral.sh/uv/install.sh \| sh`|
+- **Component repos are canonical.** Features, fixes, PRs, and CI happen there; each stands alone.
+- **This repo is the promoted snapshot.** [`scripts/sync-components.sh`](./scripts/sync-components.sh) refreshes each root mirror from its component's `main` and records the source commit in [`COMPONENTS.yml`](./COMPONENTS.yml). Mirrors are never edited directly — change the component, then promote.
+- **[`legacy/`](./legacy)** preserves the original pre-split monorepo and its first-deployment documentation for historical reference.
 
-### 1. Install dependencies
+## Running the system
+
+Each component README covers its own setup (env examples included, no secrets required for local mock modes). For the full stack — Postgres (pgvector), Java, Python API, MCP — use [`ShipSmart-Test`](./ShipSmart-Test):
 
 ```bash
-pnpm install
+cd ShipSmart-Test
+scripts/run-stack.sh up      # boots db + all three services with test-safe env
+uv run pytest                # 25 contract + 32 e2e against the live stack
 ```
 
-### 2. Configure environment variables
+The web app runs from [`ShipSmart-Web`](./ShipSmart-Web) with `pnpm dev` against those services.
 
-```bash
-cp apps/web/.env.example apps/web/.env.local
-cp apps/api-java/.env.example apps/api-java/.env
-cp apps/api-python/.env.example apps/api-python/.env
-```
+## Where it is heading
 
-Fill in actual values (Supabase URL, keys, DB connection).
-Run the env checker:
+Three engineering programs are specced and sequenced next: a **six-layer evaluation system** (contract, RAG-quality, agent/tool-use, adversarial safety, product-behavior, and online evals with calibrated human review), a **governance & guardrails control system** (structured typed outputs, PII/audit lifecycle, tool policy, incident kill-switches), and a **product roadmap** that turns the assistant into a typed-contract-driven shipping search experience — followed by observability, resilience, security-hardening, delivery, and performance workstreams.
 
-```bash
-bash infra/scripts/check-env.sh
-```
+## License
 
-### 3. Initialize Java Gradle wrapper (first time only)
-
-```bash
-cd apps/api-java
-gradle wrapper --gradle-version 9.4.1
-cd ../..
-```
-
-### 4. Start all services
-
-```bash
-# Start everything
-bash infra/scripts/dev-start.sh all
-
-# Or start individually via Nx
-pnpm nx serve web         # → http://localhost:5173
-pnpm nx serve api-java    # → http://localhost:8080
-pnpm nx serve api-python  # → http://localhost:8000
-```
-
-### Service URLs (local)
-
-| Service        | URL                              |
-|----------------|----------------------------------|
-| Frontend       | http://localhost:5173            |
-| Java health    | http://localhost:8080/api/v1/health |
-| Python health  | http://localhost:8000/health     |
-| Python docs    | http://localhost:8000/docs       |
-| Java actuator  | http://localhost:8080/actuator/health |
-
----
-
-## Building
-
-```bash
-# Build all projects
-pnpm build
-
-# Build specific project
-pnpm nx build web
-pnpm nx build api-java
-pnpm nx build api-python
-```
-
----
-
-## Testing
-
-```bash
-pnpm test                    # Run all tests
-pnpm nx test web             # Frontend tests only
-pnpm nx test api-java        # Java tests only
-pnpm nx test api-python      # Python tests only
-```
-
----
-
-## Deployment (Render)
-
-See `docs/deployment-render.md` for the full guide.
-
-**Quick summary:**
-1. Push to GitHub
-2. Connect to Render via Blueprint (`render.yaml`)
-3. Fill in environment variables per service in the Render dashboard
-4. Services: `web` (Static Site), `api-java` (Web Service), `api-python` (Web Service)
-
----
-
-## Per-app READMEs
-
-Each app has its own README with setup, env vars, endpoints, and gotchas:
-
-- [`apps/api-python/README.md`](apps/api-python/README.md) — FastAPI AI service
-- [`apps/api-java/README.md`](apps/api-java/README.md) — Spring Boot transactional API
-- [`apps/web/README.md`](apps/web/README.md) — React + Vite frontend
-
----
-
-## Supabase migrations
-
-SQL migrations live in `supabase/migrations/`. Notable additions:
-
-- `20260408034204_create_rag_chunks.sql` — `vector` extension + `rag_chunks` table used by the FastAPI RAG store when `VECTOR_STORE_TYPE=pgvector`. Vector dimension is fixed at 1536 to match OpenAI `text-embedding-3-small`.
-
-Apply with `supabase db push` (requires the Supabase CLI and a linked project).
-
----
-
-## Version Notes
-
-| Component     | Version  | Notes                                                          |
-|---------------|----------|----------------------------------------------------------------|
-| React         | 19.2.x   | Upgraded from Lovable (18.3). `react-day-picker` needs v9.    |
-| TypeScript    | 5.9.x    | Latest stable.                                                 |
-| Spring Boot   | 4.0.5    | Major release (Spring Framework 7). Verify GA before prod use. |
-| Java          | 25       | Non-LTS (GA Sep 2025). Consider Java 21 LTS for long-term.    |
-| Gradle        | 9.4.1    | Latest stable (9.5 not yet released).                          |
-| FastAPI       | 0.135.3  | Stable.                                                        |
-| Python        | 3.13     | Latest stable.                                                 |
-| Nx            | 22.3     | Polyglot monorepo management.                                  |
-| pnpm          | 9.x      | Workspace manager for JS/TS packages.                          |
-
----
-
-## Contributing
-
-- Keep `docs/service-boundaries.md` updated when responsibilities change.
-- Add ADRs in `docs/adr/` for significant architectural decisions.
-- Use TODO markers for unimplemented features: `// TODO: description`
-- Do not add fake business logic — use clear placeholders.
-- .env and .md files for each sub-folder for service owner are directly put in the Render.
+See [LICENSE](./LICENSE).
