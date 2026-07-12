@@ -26,17 +26,27 @@ component repositories. Active development happens in the component repos; every
 mirror directory below equals its repo's `main` at the exact commit recorded in
 [`COMPONENTS.yml`](./COMPONENTS.yml).
 
+> **Metric convention:** structural counts are facts verified against source;
+> latency/availability figures are **(target)** budgets, never measured
+> production metrics.
+
 ---
 
 ## Table of contents
 
 - [The live system](#the-live-system)
 - [What the product does](#what-the-product-does)
-- [Architecture](#architecture)
+- [System context (C4 L1)](#system-context-c4-l1)
+- [The mesh (C4 L2)](#the-mesh-c4-l2)
+- [A request's life](#a-requests-life)
+- [The architectural spine](#the-architectural-spine)
 - [Components](#components)
 - [Cross-cutting engineering](#cross-cutting-engineering)
 - [AI governance](#ai-governance)
 - [Repository model](#repository-model)
+- [Deployment topology](#deployment-topology)
+- [Platform SLOs & latency budget](#platform-slos--latency-budget)
+- [Technology radar](#technology-radar)
 - [Running the system](#running-the-system)
 - [License](#license)
 
@@ -68,30 +78,54 @@ is dev-only, error responses carry no stack traces.*
 | **Multi-agent workflow** | A checkpointed run through specialist agents (classification, documentation, landed cost, routing over a deterministic domain core) that **suspends for a human reviewer** on unverified high-risk areas. |
 | **MCP tools** | Six read/preview tools over MCP/HTTP — the registry is **read-only by a boot-time invariant** (a write tool prevents startup). |
 
-## Architecture
+---
 
+## System context (C4 L1)
+
+**Figure 1 — ShipSmart and its world.**
+
+```mermaid
+flowchart TB
+    USER(["Shipper (end user)"])
+    OPS(["Operator / reviewer"])
+    subgraph SHIPSMART["ShipSmart platform"]
+        SYS["AI-driven shipping search: quote -> advise -> book -> track"]
+    end
+    LLM["LLM providers: OpenAI · Anthropic · Gemini · Llama"]
+    CARR["Carrier APIs: FedEx · UPS · USPS · DHL (sandbox)"]
+    SUPA["Supabase: Postgres + pgvector + auth + edge"]
+    RENDER["Render (hosting)"]
+    USER --> SYS
+    OPS -->|"health/ready probes"| SYS
+    SYS --> LLM
+    SYS --> CARR
+    SYS --> SUPA
+    SYS --> RENDER
 ```
-                ┌─────────────────────────────────────────────┐
-                │            ShipSmart-Web · React SPA        │
-                │   typed AI rendering · SSE · undoable patches│
-                └──────────────┬───────────────────┬──────────┘
-                               │  Bearer Supabase JWT
-                               ▼                   ▼
-     ┌──────────────────────────────┐   ┌──────────────────────────────┐
-     │   ShipSmart-Orchestrator     │◀──│         ShipSmart-API        │
-     │   Java / Spring Boot         │   │       Python / FastAPI       │
-     │   SOLE writer to Postgres    │   │  LLM router · hybrid RAG ·   │
-     │   quotes · bookings · saved  │   │  guardrails · agents · SSE   │
-     │   AiClaimGuard (§5.6)        │   └──────────────┬───────────────┘
-     └──────────────┬───────────────┘                  ▼
-                    ▼                    ┌──────────────────────────────┐
-     ┌──────────────────────────────┐    │        ShipSmart-MCP         │
-     │  Supabase Postgres + Auth    │    │  read-only tool boundary     │
-     │  RLS ×8 · WORM audit ledger  │    │  (boot-enforced allowlist)   │
-     │  pgvector · 14 edge fns      │    └──────────────────────────────┘
-     └──────────────────────────────┘
-        ShipSmart-Infra: migrations · RLS · WORM + retention · validator
-        ShipSmart-Test: 10 contract suites · six-layer evals · live e2e
+
+---
+
+## The mesh (C4 L2)
+
+**Figure 2 — six services + umbrella, with protocols.** The Test tier's dashed
+edges are *executable assertions*: its CI checks out all six repos and fails
+when any two drift.
+
+```mermaid
+flowchart TB
+    U[Browser] -->|"typed SSE + JSON"| WEB["ShipSmart-Web — React 19, strict TS (87 tests)"]
+    WEB -->|"Supabase bearer JWT + X-Request-Id/traceparent"| API["ShipSmart-API — FastAPI AI layer (499 tests)"]
+    WEB -->|JWT| JAVA["ShipSmart-Orchestrator — Spring Boot system of record (111 tests)"]
+    API -->|"MCP over HTTP — X-MCP-Api-Key"| MCP["ShipSmart-MCP — read-only tool boundary (94 tests)"]
+    API -->|httpx| JAVA
+    JAVA -->|"JPA + Flyway (ddl-auto: validate)"| DB[("ShipSmart-Infra — Supabase Postgres: RLS ×8, WORM ledger, pgvector, 14 edge fns")]
+    API -->|asyncpg| DB
+    MCP -->|"httpx sandbox"| CARR["Carrier APIs"]
+    TEST["ShipSmart-Test — referee (133 tests)"] -.->|"10 contract suites"| WEB
+    TEST -.-> API
+    TEST -.-> MCP
+    TEST -.-> JAVA
+    TEST -.-> DB
 ```
 
 **Ownership rules the system is built on:**
@@ -111,6 +145,94 @@ is dev-only, error responses carry no stack traces.*
 - **Graceful degradation everywhere.** LLM failover chains ending in a keyless
   echo; carrier fallbacks; trust-tagged partial results; feature flags and
   runtime kill-switches (capability only — guardrails are never killable).
+
+---
+
+## A request's life
+
+**Figure 3 — quote → advise → book, one request id throughout.**
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant W as Web
+    participant J as Java (record)
+    participant A as API (AI)
+    participant M as MCP (tools)
+    participant L as WORM ledger
+    U->>W: fill shipment draft
+    W->>J: quotes (JWT, X-Request-Id)
+    J->>J: JWKS verify · rate limit · scatter-gather carriers (parallel, timeouts)
+    J-->>W: normalized options + QuoteTrust (degraded carriers visible)
+    U->>W: "compare the two cheapest — is it compliant?"
+    W->>A: /assistant/stream (signed state)
+    A->>A: normalize · injection gate · PII · grounding (hybrid RAG)
+    A->>M: check_restricted_items (schema-validated, egress-guarded, audited)
+    M-->>A: advisory result (never "cleared")
+    A-->>W: SSE deltas ... then typed AssistantResponse
+    A->>L: AIEvent (pseudonymized, versioned)
+    W->>W: typed cards + policy-gated FormPatch (undoable)
+    U->>W: confirm booking
+    W->>J: book (quoteRef, human confirmation)
+    J->>J: AiClaimGuard: stored quote? live? confirmed? price match?
+    J-->>W: booked — authoritative total = STORED quote's (Java wins)
+    J->>L: audit
+```
+
+**Figure 4 — the same path as a user journey.**
+
+```mermaid
+journey
+    title Ship a package with the copilot
+    section Search
+      Fill draft form: 4: User
+      See live quote grid: 5: User
+    section Advise
+      Ask copilot to compare: 5: User
+      Watch streamed typed answer: 5: User
+      Accept auto-applied patch (undoable): 4: User
+    section Book
+      Confirm booking explicitly: 5: User
+      Java re-validates price and books: 5: System
+```
+
+**Failure-path notes (coded behaviors):** an LLM provider outage fails over
+along the chain (before the first streamed token) or degrades to the
+deterministic echo; a carrier outage yields a trust-tagged partial grid; a
+forged/unsigned client state is treated as empty and any "approval" it carries
+is rejected.
+
+---
+
+## The architectural spine
+
+**Figure 5 — five ideas, enforced everywhere.**
+
+```mermaid
+flowchart TB
+    subgraph S1["1 · Trust boundary ×3 tiers"]
+        X1["Web: typed render + confirm + undo"]
+        X2["API: rule-derived apply-policy + output validation"]
+        X3["Java: AiClaimGuard re-derivation — wins on price"]
+    end
+    subgraph S2["2 · Executable typed contracts"]
+        Y1["Pydantic == typed-outputs.ts"]
+        Y2["SQL fn shape CI-asserted"]
+        Y3["tags == registry — 6 repos checked out in CI"]
+    end
+    subgraph S3["3 · Least privilege by construction"]
+        Z1["MCP cannot boot with a write tool"]
+        Z2["only Java holds transactional authority"]
+    end
+    subgraph S4["4 · Governance as data"]
+        G1["tag vocabulary -> WORM ledger -> daily view -> coverage gate"]
+    end
+    subgraph S5["5 · One correlation id"]
+        C1["X-Request-Id + traceparent: Web -> API -> MCP -> Java -> logs/spans"]
+    end
+```
+
+---
 
 ## Components
 
@@ -145,26 +267,100 @@ is dev-only, error responses carry no stack traces.*
 
 ## AI governance
 
-Governance is **data, not documentation**: services emit a canonical
-`guardrail:* / agent:* / compliance:* / workflow:* / budget:*` tag vocabulary;
-every model/tool decision lands in a **WORM Postgres ledger** (append-only by
-trigger; deletes only via a transaction-scoped retention job — 30d/13mo/24mo
-classes; identity pseudonymized) surfaced through an `ai_guardrail_daily` view;
-and a **coverage gate** fails the build when any release-gated guardrail control
-has fewer adversarial eval cases than its declared minimum. Runtime
-**kill-switches** can disable any AI capability instantly — audited, with
-guardrails themselves never killable.
+**Figure 6 — governance as data, end to end.**
+
+```mermaid
+flowchart LR
+    SVC["services emit canonical tags: guardrail:* · agent:* · compliance:* · workflow:* · budget:*"] --> WORM[("WORM Postgres ledger — append-only by trigger; retention 30d/13mo/24mo via txn-scoped GUC; identity pseudonymized")]
+    WORM --> VIEW["ai_guardrail_daily view — per (day, tag) counts"]
+    VIEW --> DASH["dashboards / alerts"]
+    TAGS["tag_vocabulary.yml (registry)"] --> GATE["coverage.yml completeness gate — fails the build when a control is under-covered"]
+    SVC -.->|"emitted tags must be registered"| TAGS
+    KS["runtime kill-switches — capability only, audited actor+reason; guardrails never killable"] -.-> SVC
+```
 
 ## Repository model
 
-A **monorepo of mirrors**: each `ShipSmart-*` directory is generated by
-[`scripts/sync-components.sh`](./scripts/sync-components.sh) —
-`git archive main | tar -x` from the component repo — so every mirror equals its
-repo's `main` **bit for bit** at the commit pinned in
-[`COMPONENTS.yml`](./COMPONENTS.yml) (synced timestamp + repo URL + commit SHA +
-subject per component). You get microservice autonomy (six pipelines), a
-single-clone reading experience, and verifiable provenance — without
-submodules.
+**Figure 7 — a monorepo of mirrors with pinned provenance.** Microservice
+autonomy (six pipelines) + a single-clone reading experience + verifiable
+provenance — without submodules.
+
+```mermaid
+flowchart LR
+    subgraph CHILDREN["Six child repos (own CI, own deploys)"]
+        C1[Web] 
+        C2[Orchestrator] 
+        C3[API] 
+        C4[MCP] 
+        C5[Infra] 
+        C6[Test]
+    end
+    SYNC["scripts/sync-components.sh: git archive main | tar -x into root-level mirror dirs"]
+    MANIFEST["COMPONENTS.yml: synced_at + repo URL + pinned commit SHA + subject"]
+    UMB["nia194/ShipSmart — one browsable clone of the whole platform"]
+    CHILDREN --> SYNC --> UMB
+    SYNC --> MANIFEST --> UMB
+```
+
+## Deployment topology
+
+**Figure 8 — the live mesh (verifiable right now).**
+
+```mermaid
+flowchart LR
+    U[Browser] --> W["shipsmart-web.onrender.com (demo)"]
+    W --> A["shipsmart-api-python.onrender.com — /ready shows flags + LLM chains"]
+    W --> J["shipsmart.onrender.com — /api/v1/health + /actuator/health"]
+    A --> M["shipsmart-mcp.onrender.com — /health shows tool count"]
+    A --> S[("Supabase: Postgres + pgvector + auth + 14 edge fns")]
+    J --> S
+    W --> S
+```
+
+## Platform SLOs & latency budget
+
+| Service | Availability *(target)* | p95 *(target)* | Probe |
+|---|---|---|---|
+| Web | 99.9% | route TTI < 2 s | the app |
+| API | 99.5% | first token < 1 s | `/ready` |
+| Orchestrator | 99.5% | quotes < 2 s | `/api/v1/health` |
+| MCP | 99.5% | pure tools < 50 ms | `/health` |
+| **Composite journey** | **99%** | **quote→advise < 4 s** | e2e lane |
+
+**Figure 9 — end-to-end journey budget per hop (target).**
+
+```mermaid
+xychart-beta
+    title "Journey budget per hop in ms (target)"
+    x-axis ["auth", "fan-out", "gates", "RAG", "first-token", "book-guard"]
+    y-axis "ms (target)" 0 --> 2000
+    bar [50, 2000, 40, 120, 700, 50]
+```
+
+## Technology radar
+
+**Figure 10 — platform technology positioning.**
+
+```mermaid
+quadrantChart
+    title Platform technology positioning
+    x-axis Established --> Emerging
+    y-axis Supporting --> Core
+    quadrant-1 Core + Emerging
+    quadrant-2 Core + Established
+    quadrant-3 Supporting + Established
+    quadrant-4 Supporting + Emerging
+    "Spring Boot 3 / JPA": [0.2, 0.8]
+    "React 19 + strict TS": [0.35, 0.75]
+    "FastAPI + Pydantic v2": [0.4, 0.85]
+    "pgvector hybrid RAG": [0.65, 0.8]
+    "MCP tool boundary": [0.8, 0.75]
+    "LLM router + failover": [0.7, 0.85]
+    "Testcontainers": [0.3, 0.4]
+    "Wilson-gated evals": [0.75, 0.55]
+    "Deno edge functions": [0.6, 0.35]
+    "Flyway / RLS / WORM SQL": [0.25, 0.6]
+```
 
 ## Running the system
 
